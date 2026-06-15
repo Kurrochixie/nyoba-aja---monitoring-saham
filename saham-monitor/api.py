@@ -194,6 +194,52 @@ def build_news():
         return None
 
 
+def _seed_keywords_if_empty():
+    """Kata kunci berita favorit; bila kosong → seed dari watchlist (saran awal)."""
+    import storage
+    kws = storage.get_news_keywords()
+    if not kws:
+        wl = [utils.short_code(s) for s in storage.get_watchlist() if not s.startswith("^")]
+        for c in wl[:5]:
+            storage.add_news_keyword(c)
+        kws = storage.get_news_keywords()
+    return kws
+
+
+def _kw_query(kw):
+    """Kode/nama pendek dibumbui 'saham' agar relevan ke bursa."""
+    return kw if (" " in kw or len(kw) > 6) else (kw + " saham")
+
+
+def build_news_stream():
+    """Tab SEMUA = gabungan kata kunci favorit + feed pasar umum (dedup, urut terbaru)."""
+    kws = _seed_keywords_if_empty()
+    raw = []
+    try:
+        with cf.ThreadPoolExecutor(max_workers=6) as ex:
+            futs = [ex.submit(ns.fetch_general, 18)]
+            futs += [ex.submit(ns.fetch_for_query, _kw_query(kw), 12) for kw in kws[:8]]
+            for f in cf.as_completed(futs):
+                try:
+                    raw.extend(f.result() or [])
+                except Exception:
+                    pass
+    except Exception:
+        try:
+            raw = ns.fetch_general(18)
+        except Exception:
+            raw = []
+    seen, merged = set(), []
+    for it in sorted(raw, key=lambda x: x.get("ts", 0), reverse=True):
+        k = (it.get("title") or "")[:80].lower()
+        if k and k not in seen:
+            seen.add(k)
+            merged.append(it)
+    out = _format_news(merged[:60])
+    out["keywords"] = kws
+    return out
+
+
 def _compact(v):
     v = float(v or 0)
     for div, suf in ((1e12, "T"), (1e9, "M"), (1e6, "Jt")):
@@ -222,8 +268,15 @@ def build_research_one(sym):
         return None
     f = ms.get_fundamentals(sym)
     rsi, rsi_state, verdict, signals = 50, "Netral", "NETRAL", []
+    w52lo_h, w52hi_h = None, None
     df, _ = ms.get_history(sym, period="1y")
     if df is not None and not df.empty:
+        try:
+            _lo = "Low" if "Low" in df.columns else "Close"
+            _hi = "High" if "High" in df.columns else "Close"
+            w52lo_h, w52hi_h = float(df[_lo].min()), float(df[_hi].max())
+        except Exception:
+            pass
         enr = indicators.enrich(df)
         sigs = indicators.signals(enr)
         verdict = indicators.verdict_overall(sigs)[0]
@@ -252,8 +305,8 @@ def build_research_one(sym):
         "roe": _pct_str(f.roe if f else None), "netMargin": _pct_str(f.profit_margin if f else None),
         "der": _x(f.de_ratio) if f and f.de_ratio else "—",
         "beta": _id(f.beta, 2) if f and f.beta else "—",
-        "w52low": round(f.week52_low) if f and f.week52_low else round(q.day_low),
-        "w52high": round(f.week52_high) if f and f.week52_high else round(q.day_high),
+        "w52low": round(f.week52_low) if f and f.week52_low else (round(w52lo_h) if w52lo_h else round(q.day_low)),
+        "w52high": round(f.week52_high) if f and f.week52_high else (round(w52hi_h) if w52hi_h else round(q.day_high)),
         "rsi": rsi, "rsiState": rsi_state, "verdict": verdict,
         "signals": signals or [{"name": "—", "value": "—", "state": "neu", "note": ""}],
     }
@@ -364,12 +417,69 @@ def search_news(q: str = ""):
     q = (q or "").strip()
     if not q:
         return build_news() or {"summary": {"total": 0, "pos": 0, "neg": 0, "neu": 0}, "items": []}
-    sq = q if (" " in q or len(q) > 6) else (q + " saham")
     try:
-        raw = ns.fetch_for_query(sq, limit=24)
+        raw = ns.fetch_for_query(_kw_query(q), limit=24)
     except Exception:
         raw = []
     return _format_news(raw)
+
+
+@app.get("/api/news/stream")
+def news_stream():
+    """Tab SEMUA: gabungan kata kunci favorit + feed pasar umum."""
+    return build_news_stream()
+
+
+class KeywordIn(BaseModel):
+    keyword: str
+
+
+@app.post("/api/news-keywords")
+def add_news_kw(b: KeywordIn):
+    import storage
+    kw = (b.keyword or "").strip()
+    if kw:
+        storage.add_news_keyword(kw)
+    return {"ok": True, "keywords": storage.get_news_keywords()}
+
+
+@app.delete("/api/news-keywords/{keyword}")
+def del_news_kw(keyword: str):
+    import storage
+    storage.remove_news_keyword(keyword)
+    return {"ok": True, "keywords": storage.get_news_keywords()}
+
+
+@app.get("/api/candles")
+def candles(code: str, range: str = "1H"):
+    """Candle INTRADAY nyata untuk chart Bawaan. range: 1H (1d/5m) atau 5H (5d/15m)."""
+    pi = config.INTRADAY.get(range)
+    if not pi:
+        return {"ok": False, "candles": [], "dates": []}
+    period, interval = pi
+    sym = utils.normalize_symbol(code)
+    try:
+        df, _ = ms.get_intraday(sym, period=period, interval=interval)
+    except Exception:
+        df = None
+    if df is None or df.empty:
+        return {"ok": False, "candles": [], "dates": []}
+    out_c, out_d = [], []
+    for ts, row in df.iterrows():
+        try:
+            o, h_, lo, c = float(row["Open"]), float(row["High"]), float(row["Low"]), float(row["Close"])
+        except Exception:
+            continue
+        if c != c:  # NaN
+            continue
+        vol = row["Volume"] if "Volume" in row.index else 0
+        v = int(vol) if vol == vol else 0
+        out_c.append({"o": round(o, 2), "h": round(h_, 2), "l": round(lo, 2), "c": round(c, 2), "v": v})
+        try:
+            out_d.append({"full": ts.strftime("%d %b %H:%M"), "axis": ts.strftime("%H:%M")})
+        except Exception:
+            out_d.append({"full": "", "axis": ""})
+    return {"ok": bool(out_c), "candles": out_c, "dates": out_d, "interval": interval}
 
 
 @app.post("/api/alerts/evaluate")
@@ -406,6 +516,10 @@ def bootstrap():
     news = build_news()
     if news:
         out["NEWS"] = news
+    try:
+        out.setdefault("NEWS", {})["keywords"] = _seed_keywords_if_empty()
+    except Exception:
+        pass
     try:
         research = build_research(symbols)
         if research:

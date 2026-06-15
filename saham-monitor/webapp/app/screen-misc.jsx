@@ -120,63 +120,99 @@
 
   /* ===================== BERITA ===================== */
   function Berita(props) {
-    var fs = React.useState("Semua"); var filter = fs[0], setFilter = fs[1];
     var qs = React.useState(""); var query = qs[0], setQuery = qs[1];
-    var rs = React.useState(null); var results = rs[0], setResults = rs[1];
-    var ls = React.useState(false); var loading = ls[0], setLoading = ls[1];
+    var fds = React.useState(null); var feed = fds[0], setFeed = fds[1];
+    var ls = React.useState(true); var loading = ls[0], setLoading = ls[1];
     var sf2 = React.useState("Semua"); var sentFilter = sf2[0], setSentFilter = sf2[1];
     var srf = React.useState("Semua"); var srcFilter = srf[0], setSrcFilter = srf[1];
+    var av = React.useState("SEMUA"); var active = av[0], setActive = av[1];
+    var ao = React.useState(false); var addOpen = ao[0], setAddOpen = ao[1];
+    var nk = React.useState(""); var newKw = nk[0], setNewKw = nk[1];
 
+    var keywords = (SM.NEWS && SM.NEWS.keywords) || [];
+    var keywordsKey = keywords.join("|");
     var qq = query.trim();
     var searchMode = qq.length >= 2;
+    var effActive = (active === "SEMUA" || keywords.indexOf(active) >= 0) ? active : "SEMUA";
 
-    /* Pencarian NYATA: query >=2 huruf → tarik berita dari Google News (debounce 450ms). */
+    /* Sumber berita aktif: pencarian bebas (debounce), SEMUA (stream gabungan), atau 1 kata kunci. */
     React.useEffect(function () {
-      if (qq.length < 2) { setResults(null); setLoading(false); return; }
-      setLoading(true);
-      var t = setTimeout(function () {
-        fetch("/api/news?q=" + encodeURIComponent(qq))
-          .then(function (r) { return r.json(); })
-          .then(function (d) { setResults((d && d.items) || []); setLoading(false); })
-          .catch(function () { setResults([]); setLoading(false); });
-      }, 450);
-      return function () { clearTimeout(t); };
-    }, [qq]);
+      var ctrl = true; setLoading(true);
+      var url, debounce = 0;
+      if (searchMode) { url = "/api/news?q=" + encodeURIComponent(qq); debounce = 450; }
+      else if (effActive === "SEMUA") { url = "/api/news/stream"; }
+      else { url = "/api/news?q=" + encodeURIComponent(effActive); }
+      function go() {
+        fetch(url).then(function (r) { return r.json(); })
+          .then(function (d) { if (ctrl) { setFeed((d && d.items) || []); setLoading(false); } })
+          .catch(function () { if (ctrl) { setFeed([]); setLoading(false); } });
+      }
+      if (debounce) { var t = setTimeout(go, debounce); return function () { ctrl = false; clearTimeout(t); }; }
+      go();
+      return function () { ctrl = false; };
+    }, [searchMode, qq, effActive, keywordsKey]);
 
-    /* Reset filter sumber saat ganti pencarian/kategori (daftar sumber bisa berubah). */
-    React.useEffect(function () { setSrcFilter("Semua"); }, [qq, filter]);
+    /* Reset filter sumber saat ganti sumber berita. */
+    React.useEffect(function () { setSrcFilter("Semua"); }, [qq, effActive, keywordsKey]);
 
-    /* Chip kategori (mode feed umum) dari tag yang benar-benar ada — selalu ada hasil. */
-    var tagCount = {};
-    SM.NEWS.items.forEach(function (n) { if (n.tag) tagCount[n.tag] = (tagCount[n.tag] || 0) + 1; });
-    var rank = { "Pasar": 1e6, "Regulasi": 1e6 - 1 };
-    var tags = ["Semua"].concat(Object.keys(tagCount).sort(function (a, b) {
-      return ((rank[b] || 0) + tagCount[b]) - ((rank[a] || 0) + tagCount[a]);
-    }));
+    function addKw(kw) {
+      kw = (kw || "").trim();
+      if (!kw) return;
+      if (keywords.indexOf(kw) >= 0) { props.toast({ kind: "info", title: "Sudah ada", sub: "“" + kw + "” sudah jadi kata kunci" }); setNewKw(""); return; }
+      window.SM_API.addNewsKeyword(kw);
+      props.toast({ kind: "pos", title: "Kata kunci ditambah", sub: kw });
+      setNewKw(""); setActive(kw);
+    }
+    function removeKw(kw) {
+      if (keywords.length <= 3) { props.toast({ kind: "neg", title: "Minimal 3 kata kunci", sub: "Tambah dulu sebelum menghapus." }); return; }
+      window.SM_API.delNewsKeyword(kw);
+      if (effActive === kw) setActive("SEMUA");
+    }
 
-    /* Item dasar: hasil pencarian, atau feed umum tersaring kategori. */
-    var baseItems = searchMode ? (results || [])
-      : SM.NEWS.items.filter(function (n) { return filter === "Semua" || n.tag === filter; });
-
-    /* Daftar sumber unik untuk dropdown (urut terbanyak). */
+    var baseItems = feed || [];
     var srcCount = {};
     baseItems.forEach(function (n) { var sn = n.source || "Lainnya"; srcCount[sn] = (srcCount[sn] || 0) + 1; });
     var sources = Object.keys(srcCount).sort(function (a, b) { return srcCount[b] - srcCount[a]; });
     var effSrc = (srcFilter !== "Semua" && srcCount[srcFilter]) ? srcFilter : "Semua";
-
-    /* Terapkan filter sentimen + sumber pada item yang tampil. */
     var items = baseItems.filter(function (n) {
       return (sentFilter === "Semua" || n.sentiment === sentFilter) && (effSrc === "Semua" || n.source === effSrc);
     });
 
-    /* Ringkasan sentimen mengikuti item yang sedang tampil. */
     function cnt(k) { return items.filter(function (n) { return n.sentiment === k; }).length; }
     var roll = { total: items.length, pos: cnt("pos"), neu: cnt("neu"), neg: cnt("neg") };
     var bars = [["Positif", roll.pos, "var(--up)"], ["Netral", roll.neu, "var(--ink-4)"], ["Negatif", roll.neg, "var(--down)"]];
     var pctOf = function (v) { return (roll.total ? v / roll.total * 100 : 0) + "%"; };
+    var rollLabel = searchMode ? "hasil pencarian" : (effActive === "SEMUA" ? "berita gabungan" : "berita “" + effActive + "”");
 
     var resultMeta = h("div", { style: { marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-3)", fontWeight: 600 } },
       h(Ic, { name: "clock", size: 13 }), "Urut: terbaru · ", h("span", { className: "num" }, items.length), " hasil");
+
+    /* Chip kata kunci favorit: [SEMUA] [kata kunci ×] … [+ Kata kunci] */
+    var chipsRow = h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
+      h("button", { className: "chip" + (effActive === "SEMUA" ? " on" : ""), onClick: function () { setActive("SEMUA"); } },
+        h(Ic, { name: "layers", size: 14 }), "SEMUA"),
+      keywords.map(function (kw) {
+        return h("span", { key: kw, className: "chip" + (effActive === kw ? " on" : ""), style: { cursor: "pointer", paddingRight: 7 }, onClick: function () { setActive(kw); } },
+          kw,
+          h("span", { title: "Hapus kata kunci", onClick: function (e) { e.stopPropagation(); removeKw(kw); }, style: { marginLeft: 7, display: "inline-flex", alignItems: "center", opacity: 0.5 } }, h(Ic, { name: "x", size: 12 })));
+      }),
+      h("button", { className: "chip", style: { borderStyle: "dashed" }, onClick: function () { setAddOpen(!addOpen); } }, h(Ic, { name: "plus", size: 13 }), "Kata kunci"),
+      resultMeta);
+
+    /* Panel tambah kata kunci (saran dari watchlist + bebas ketik). */
+    var suggestions = SM.STOCKS.map(function (s) { return s.code; }).filter(function (c) { return keywords.indexOf(c) < 0; }).slice(0, 12);
+    var addPanel = h("div", { className: "card", style: { padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 } },
+      h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
+        h("input", { className: "input", autoFocus: true, placeholder: "Tambah kata kunci — emiten (BBCA) atau topik (dividen, IPO, suku bunga)…", value: newKw,
+          onChange: function (e) { setNewKw(e.target.value); }, onKeyDown: function (e) { if (e.key === "Enter") addKw(newKw); } }),
+        h("button", { className: "btn btn-primary btn-sm", onClick: function () { addKw(newKw); } }, h(Ic, { name: "plus", size: 14 }), "Tambah"),
+        h("button", { className: "btn btn-ghost btn-sm", onClick: function () { setAddOpen(false); } }, "Tutup")),
+      suggestions.length ? h("div", { style: { display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" } },
+        h("span", { style: { fontSize: 11.5, color: "var(--ink-3)", fontWeight: 700 } }, "Saran watchlist:"),
+        suggestions.map(function (c) {
+          return h("button", { key: c, className: "chip", style: { height: 30, padding: "0 10px" }, onClick: function () { addKw(c); } }, h(Ic, { name: "plus", size: 12 }), c);
+        })) : null,
+      keywords.length < 3 ? h("div", { style: { fontSize: 12, color: "var(--down-text)", fontWeight: 600 } }, "Disarankan minimal 3 kata kunci agar tab SEMUA kaya konten.") : null);
 
     /* Baris filter: sentimen (chip dot warna) + sumber (dropdown). */
     var sentChips = [["Semua", "Semua", null], ["pos", "Positif", "var(--up)"], ["neu", "Netral", "var(--ink-4)"], ["neg", "Negatif", "var(--down)"]];
@@ -200,7 +236,7 @@
         h("div", { className: "card", style: { padding: "12px 14px" } },
           h("div", { className: "search", style: { width: "100%" } },
             h(Ic, { name: "search", size: 17 }),
-            h("input", { placeholder: "Cari berita emiten — mis. BRMS, ANTM, atau nama perusahaan…", value: query, onChange: function (e) { setQuery(e.target.value); } }),
+            h("input", { placeholder: "Cari dadakan — emiten atau topik apa pun…", value: query, onChange: function (e) { setQuery(e.target.value); } }),
             query && h("button", { className: "icon-btn", style: { width: 26, height: 26, boxShadow: "none", border: "none", background: "transparent" }, onClick: function () { setQuery(""); } }, h(Ic, { name: "x", size: 15 })))),
         searchMode
           ? h("div", { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
@@ -209,27 +245,24 @@
                 h("span", { style: { color: "var(--ink)", fontWeight: 800 } }, "“" + qq + "”"),
                 " via Google News"),
               resultMeta)
-          : h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" } },
-              tags.map(function (t) {
-                return h("button", { key: t, className: "chip" + (filter === t ? " on" : ""), onClick: function () { setFilter(t); } }, t === "Semua" ? h(Ic, { name: "filter", size: 14 }) : null, t);
-              }),
-              resultMeta),
+          : chipsRow,
+        (!searchMode && addOpen) ? addPanel : null,
         filterBar,
         loading
           ? h("div", { className: "card" }, h("div", { className: "empty" },
               h("div", { className: "empty-ic" }, h(Ic, { name: "search", size: 28 })),
-              h("h3", null, "Mencari berita…"),
-              h("p", null, "Menarik berita terbaru untuk “" + qq + "” dari Google News.")))
+              h("h3", null, "Memuat berita…"),
+              h("p", null, searchMode ? ("Menarik berita “" + qq + "” dari Google News.") : (effActive === "SEMUA" ? "Menggabungkan berita dari semua kata kunci favorit + pasar." : "Menarik berita “" + effActive + "”."))))
           : (items.length ? items.map(function (n, i) { return NewsCard(n, i); })
             : h("div", { className: "card" }, h("div", { className: "empty" },
                 h("div", { className: "empty-ic" }, h(Ic, { name: "search", size: 28 })),
-                h("h3", null, searchMode ? ("Tidak ada berita untuk “" + qq + "”") : "Tidak ada berita cocok"),
-                h("p", null, "Coba ubah filter sentimen/sumber, kata kunci, atau kategori."))))),
+                h("h3", null, "Tidak ada berita"),
+                h("p", null, "Coba ubah filter sentimen/sumber, ganti kata kunci, atau tambah kata kunci baru."))))),
       h("div", { className: "card card-pad sticky-aside" },
         h("div", { className: "section-title", style: { marginBottom: 14 } }, h(Ic, { name: "sparkles", size: 16 }), "Rollup Sentimen"),
         h("div", { style: { textAlign: "center", marginBottom: 16 } },
           h("div", { className: "num", style: { fontSize: 40, fontWeight: 800, letterSpacing: "-0.03em" } }, roll.total),
-          h("div", { style: { fontSize: 12.5, color: "var(--ink-3)", fontWeight: 600 } }, searchMode ? "hasil pencarian" : "total berita hari ini")),
+          h("div", { style: { fontSize: 12.5, color: "var(--ink-3)", fontWeight: 600 } }, rollLabel)),
         h("div", { className: "progress", style: { height: 12, marginBottom: 16 } },
           h("span", { style: { width: pctOf(roll.pos), background: "var(--up)" } }),
           h("span", { style: { width: pctOf(roll.neu), background: "var(--ink-4)" } }),

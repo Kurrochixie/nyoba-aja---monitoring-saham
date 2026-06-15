@@ -47,6 +47,8 @@
     delTxn: function (id) { return req("/api/transactions/" + id, "DELETE").then(window.SM_reload); },
     addRule: function (r) { return req("/api/rules", "POST", r).then(window.SM_reload); },
     delRule: function (id) { return req("/api/rules/" + id, "DELETE").then(window.SM_reload); },
-    toggleRule: function (id, active) { return req("/api/rules/" + id + "/toggle", "POST", { active: active }).then(window.SM_reload); }
+    toggleRule: function (id, active) { return req("/api/rules/" + id + "/toggle", "POST", { active: active }).then(window.SM_reload); },
+    addNewsKeyword: function (kw) { return req("/api/news-keywords", "POST", { keyword: kw }).then(window.SM_reload); },
+    delNewsKeyword: function (kw) { return req("/api/news-keywords/" + encodeURIComponent(kw), "DELETE").then(window.SM_reload); }
   };
 })();

@@ -15,6 +15,7 @@
     var selCode = props.selected || "BBCA";
     var sel = SM.getStock(selCode) || SM.STOCKS[2];
     var ps = React.useState("3B"); var period = ps[0], setPeriod = ps[1];
+    var cm = React.useState("builtin"); var chartMode = cm[0], setChartMode = cm[1];
     var ss = React.useState({ key: "chgPct", dir: -1 }); var sort = ss[0], setSort = ss[1];
     var q = (props.search || "").toLowerCase();
 
@@ -121,9 +122,12 @@
               h(window.Delta, { pct: sel.chgPct, chg: sel.chg })),
             h("div", { className: "sub" }, sel.name + " · " + sel.sector)),
           h("div", { className: "spacer" }),
-          h("div", { className: "segmented" }, PERIODS.map(function (p) {
-            return h("button", { key: p.id, className: period === p.id ? "active" : "", onClick: function () { setPeriod(p.id); } }, p.id);
+          h("div", { className: "segmented" }, [["builtin", "Bawaan"], ["tv", "TradingView"]].map(function (m) {
+            return h("button", { key: m[0], className: chartMode === m[0] ? "active" : "", onClick: function () { setChartMode(m[0]); } }, m[1]);
           })),
+          chartMode === "builtin" ? h("div", { className: "segmented", style: { marginLeft: 8 } }, PERIODS.map(function (p) {
+            return h("button", { key: p.id, className: period === p.id ? "active" : "", onClick: function () { setPeriod(p.id); } }, p.id);
+          })) : null,
           h("button", { className: "btn btn-secondary btn-sm", style: { marginLeft: 10 }, onClick: function () { props.onOpenRiset(sel.code); } }, h(Ic, { name: "microscope", size: 15 }), "Riset")),
         h("div", { className: "card-pad", style: { paddingTop: 14 } },
           h("div", { style: { display: "flex", alignItems: "baseline", gap: 14, marginBottom: 6 } },
@@ -133,12 +137,15 @@
               miniMetric("Terendah", SM.fmt(Math.round(sel.price * 0.984)), "down"),
               miniMetric("Volume", sel.vol),
               miniMetric("Prev", SM.fmt(sel.prevClose)))),
-          h("div", { style: { display: "flex", gap: 14, marginBottom: 4, alignItems: "center" } },
-            legendSwatch("#4F66E8", "SMA 20"), legendSwatch("#E8A93C", "SMA 50")),
-          h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: [
-            { values: sma20, color: "#4F66E8", width: 1.6 }, { values: sma50, color: "#E8A93C", width: 1.6 }
-          ] }),
-          h(window.VolumePanel, { candles: candles, height: 64 })))
+          chartMode === "builtin"
+            ? h(React.Fragment, null,
+                h("div", { style: { display: "flex", gap: 14, marginBottom: 4, alignItems: "center" } },
+                  legendSwatch("#4F66E8", "SMA 20"), legendSwatch("#E8A93C", "SMA 50")),
+                h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: [
+                  { values: sma20, color: "#4F66E8", width: 1.6 }, { values: sma50, color: "#E8A93C", width: 1.6 }
+                ] }),
+                h(window.VolumePanel, { candles: candles, height: 64 }))
+            : h(window.TVChart, { code: sel.code, height: 440 })))
     );
   }
 

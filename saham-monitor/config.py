@@ -47,16 +47,34 @@ NEWS_FEEDS_GENERAL = {
 
 # ── Sentimen berita (leksikon Bahasa Indonesia ringan, tanpa model) ─────────
 POS_WORDS = {
+    # Indonesia
     "naik", "menguat", "melonjak", "melesat", "untung", "cuan", "laba", "tumbuh",
     "positif", "rekor", "optimis", "surplus", "ekspansi", "akuisisi", "dividen",
     "lonjak", "meroket", "rebound", "pulih", "kuat", "tinggi", "raih", "capai",
     "bullish", "hijau", "apresiasi", "kenaikan", "pertumbuhan", "melambung",
+    "reli", "pimpin", "memimpin", "meledak", "melejit", "terbang", "moncer",
+    "diserbu", "serbu", "serok", "borong", "diborong", "perkasa", "kinclong",
+    "tembus", "gacor", "cemerlang", "solid", "gainer", "gain", "profit", "menanjak",
+    "menghijau", "melaju", "sprint", "kerek", "dongkrak", "topang", "untungkan",
+    # English
+    "surge", "surges", "surged", "rally", "rallies", "rallied", "jump", "jumps",
+    "jumped", "soar", "soars", "soared", "gains", "rise", "rises", "rose", "climb",
+    "climbs", "higher", "rebounds", "record", "outperform", "strong", "beat",
+    "beats", "boost", "boosts", "top", "rallying", "upgrade", "upgraded",
 }
 NEG_WORDS = {
+    # Indonesia
     "turun", "melemah", "anjlok", "merosot", "rugi", "negatif", "koreksi", "defisit",
     "phk", "gagal", "tekanan", "jeblok", "ambles", "longsor", "krisis", "jatuh",
     "terkoreksi", "lesu", "bearish", "merah", "tertekan", "penurunan", "ambruk",
-    "susut", "anjlok", "terpuruk", "melorot", "pelemahan", "kerugian", "bangkrut",
+    "susut", "terpuruk", "melorot", "pelemahan", "kerugian", "bangkrut",
+    "ambrol", "terjun", "tumbang", "terkapar", "loyo", "boncos", "buntung",
+    "tergerus", "melempem", "tersungkur", "memerah", "terseret", "tekan", "tergelincir",
+    # English
+    "plunge", "plunges", "plunged", "drop", "drops", "dropped", "fall", "falls",
+    "fell", "slump", "slumps", "slumped", "tumble", "tumbles", "tumbled", "decline",
+    "declines", "sink", "sinks", "lower", "loss", "losses", "weak", "miss", "misses",
+    "crash", "crashes", "selloff", "slide", "slides", "downgrade", "downgraded",
 }
 
 # ── Indikator teknikal (default) ────────────────────────────────────────────

@@ -302,9 +302,68 @@
     );
   }
 
+  /* =================== Widget TradingView (opsi sumber chart) =================== */
+  function tvSymbol(code) {
+    if (!code) return "IDX:COMPOSITE";
+    var c = String(code).toUpperCase().replace(/\.JK$/, "").replace(/^\^/, "");
+    if (c === "JKSE" || c === "IHSG" || c === "COMPOSITE") return "IDX:COMPOSITE";
+    return "IDX:" + c;
+  }
+
+  function loadTV() {
+    return new Promise(function (resolve, reject) {
+      if (window.TradingView && window.TradingView.widget) { resolve(); return; }
+      var s = document.getElementById("tv-js");
+      if (s) { s.addEventListener("load", resolve); s.addEventListener("error", reject); return; }
+      s = document.createElement("script");
+      s.id = "tv-js"; s.src = "https://s3.tradingview.com/tv.js"; s.async = true;
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  var _tvSeq = 0;
+  function TVChart(props) {
+    var host = React.useRef(null);
+    var idRef = React.useRef(null);
+    if (!idRef.current) { _tvSeq += 1; idRef.current = "tvw_" + _tvSeq; }
+    var es = React.useState(0); var err = es[0], setErr = es[1];
+    var symbol = tvSymbol(props.code);
+    var height = props.height || 440;
+    React.useEffect(function () {
+      var alive = true; setErr(0);
+      loadTV().then(function () {
+        if (!alive || !host.current) return;
+        host.current.innerHTML = "";
+        var inner = document.createElement("div");
+        inner.id = idRef.current; inner.style.height = "100%"; inner.style.width = "100%";
+        host.current.appendChild(inner);
+        try {
+          new window.TradingView.widget({
+            autosize: true, symbol: symbol, interval: "D", timezone: "Asia/Jakarta",
+            theme: "light", style: "1", locale: "id", hide_side_toolbar: false,
+            allow_symbol_change: false, withdateranges: true, container_id: idRef.current,
+            studies: ["MASimple@tv-basicstudies"]
+          });
+        } catch (e) { setErr(1); }
+      }).catch(function () { if (alive) setErr(1); });
+      return function () { alive = false; };
+    }, [symbol]);
+    if (err) {
+      return h("div", { style: { height: height, display: "grid", placeItems: "center", textAlign: "center", padding: 24, border: "1px dashed var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 13 } },
+        h("div", null,
+          h("div", { style: { fontWeight: 700, color: "var(--ink-2)", marginBottom: 4 } }, "Widget TradingView gagal dimuat"),
+          "Periksa koneksi internet, atau gunakan chart Bawaan. Sebagian emiten IDX mungkin tak tersedia di TradingView."));
+    }
+    return h("div", { style: { position: "relative" } },
+      h("div", { ref: host, style: { height: height, width: "100%" } }),
+      h("div", { style: { fontSize: 11, color: "var(--ink-3)", marginTop: 6, display: "flex", alignItems: "center", gap: 5 } },
+        "Sumber chart: TradingView · ", h("span", { className: "num" }, symbol), " (data delayed)"));
+  }
+
   Object.assign(window, {
     Sparkline: Sparkline, AreaChart: AreaChart, Donut: Donut,
     CandleChart: CandleChart, VolumePanel: VolumePanel, RSIPanel: RSIPanel, MACDPanel: MACDPanel,
-    useMeasure: useMeasure
+    TVChart: TVChart, tvSymbol: tvSymbol, useMeasure: useMeasure
   });
 })();

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS alert_events(
     id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER, symbol TEXT,
     detail TEXT, fired_at TEXT, delivered INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS kv(k TEXT PRIMARY KEY, v TEXT);
+CREATE TABLE IF NOT EXISTS news_keywords(keyword TEXT PRIMARY KEY, added_at TEXT);
 """
 
 
@@ -80,6 +81,26 @@ def remove_from_watchlist(symbol: str) -> None:
 
 def in_watchlist(symbol: str) -> bool:
     return get_conn().execute("SELECT 1 FROM watchlist WHERE symbol = ?", (symbol,)).fetchone() is not None
+
+
+# ── Kata kunci berita favorit ───────────────────────────────────────────────
+def get_news_keywords() -> list[str]:
+    rows = get_conn().execute(
+        "SELECT keyword FROM news_keywords ORDER BY added_at").fetchall()
+    return [r["keyword"] for r in rows]
+
+
+def add_news_keyword(keyword: str) -> None:
+    conn = get_conn()
+    conn.execute("INSERT OR IGNORE INTO news_keywords(keyword, added_at) VALUES(?, ?)",
+                 (keyword.strip(), _now()))
+    conn.commit()
+
+
+def remove_news_keyword(keyword: str) -> None:
+    conn = get_conn()
+    conn.execute("DELETE FROM news_keywords WHERE keyword = ?", (keyword,))
+    conn.commit()
 
 
 # ── Instrument meta ─────────────────────────────────────────────────────────

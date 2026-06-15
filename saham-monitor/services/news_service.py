@@ -62,11 +62,13 @@ def _parse(url: str, source: str) -> list[dict]:
             # Google News menambah " - <Penerbit>" di akhir judul → rapikan
             if src and title.endswith(" - " + src):
                 title = title[: -(len(src) + 3)].rstrip()
-            score, label = score_sentiment(title)
+            summary = _clean(e.get("summary", ""))[:240]
+            # Skor sentimen dari judul + ringkasan (lebih banyak sinyal).
+            score, label = score_sentiment(title + " " + summary)
             out.append({
                 "title": title, "link": e.get("link", ""),
                 "source": src, "ts": _epoch(e),
-                "summary": _clean(e.get("summary", ""))[:240],
+                "summary": summary,
                 "score": score, "sentiment": label,
             })
     except Exception:

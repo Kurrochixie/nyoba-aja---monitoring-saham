@@ -6,7 +6,7 @@
   "use strict";
   var h = React.createElement;
   var Ic = window.Ic, SM = window.SM;
-  var useState = React.useState, useMemo = React.useMemo;
+  var useState = React.useState, useMemo = React.useMemo, useEffect = React.useEffect;
 
   var PERIODS = [
     { id: "1B", n: 22, v: 0.016, label: "1 Bulan" }, { id: "3B", n: 66, v: 0.02, label: "3 Bulan" },
@@ -193,16 +193,49 @@
     var ps = useState("6B"); var period = ps[0], setPeriod = ps[1];
     var is = useState("Harian"); var intv = is[0], setIntv = is[1];
     var cs = useState("Garis"); var ctype = cs[0], setCtype = cs[1];
+    var cms = useState("builtin"); var chartMode = cms[0], setChartMode = cms[1];
+    var idd = useState(null); var intra = idd[0], setIntra = idd[1];
+
+    var isIntra = intv === "5m" || intv === "15m";
+
+    /* Intraday: tarik candle NYATA dari API (yfinance) saat interval 5m/15m. */
+    useEffect(function () {
+      if (!isIntra) { setIntra(null); return; }
+      var alive = true; setIntra({ loading: true });
+      var range = intv === "5m" ? "1H" : "5H";
+      fetch("/api/candles?code=" + encodeURIComponent(R.code) + "&range=" + range)
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (alive) setIntra(d && d.ok && d.candles && d.candles.length ? d : { empty: true }); })
+        .catch(function () { if (alive) setIntra({ empty: true }); });
+      return function () { alive = false; };
+    }, [R.code, intv]);
+
     var pcfg = PERIODS.filter(function (p) { return p.id === period; })[0];
     var rawFactor = intv === "Mingguan" ? 5 : (intv === "Bulanan" ? 22 : 1);
     var factor = Math.min(rawFactor, Math.max(1, Math.floor(pcfg.n / 6)));
-    var candles = useMemo(function () {
+    var seedCandles = useMemo(function () {
       return resample(SM.genCandles(s.seed * 5 + pcfg.n, pcfg.n, R.price, pcfg.v), factor);
     }, [R.code, period, intv]);
+    var seedDates = useMemo(function () { return SM.genDates(seedCandles.length, isIntra ? "Harian" : intv); }, [R.code, period, intv]);
+
+    var candles = isIntra ? ((intra && intra.candles) || []) : seedCandles;
+    var dates = isIntra ? ((intra && intra.dates) || []) : seedDates;
     var closes = candles.map(function (c) { return c.c; });
-    var dates = useMemo(function () { return SM.genDates(candles.length, intv); }, [R.code, period, intv]);
     var col = R.chgPct >= 0 ? "#16C784" : "#F6465D";
     var rangePos = (R.price - R.w52low) / (R.w52high - R.w52low) * 100;
+    var INTERVALS = ["5m", "15m", "Harian", "Mingguan", "Bulanan"];
+
+    var chartBody;
+    if (isIntra && intra && intra.loading) {
+      chartBody = h("div", { style: { height: 300, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 } }, "Memuat data intraday…");
+    } else if (isIntra && intra && intra.empty) {
+      chartBody = h("div", { style: { height: 300, display: "grid", placeItems: "center", textAlign: "center", padding: 24, border: "1px dashed var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 13 } },
+        h("div", null, h("div", { style: { fontWeight: 700, color: "var(--ink-2)", marginBottom: 4 } }, "Data intraday belum tersedia"), "Tersedia saat jam bursa untuk emiten likuid. Coba interval Harian."));
+    } else {
+      chartBody = ctype === "Candle"
+        ? h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: closes.length > 20 ? [{ values: SM.sma(closes, 20), color: "#4F66E8", width: 1.5 }] : [] })
+        : h(window.AreaChart, { data: closes, dates: dates, height: 280, color: col, axis: true, id: "rk" + period + intv });
+    }
 
     return h("div", { className: "screen" },
       DecisionStrip(R),
@@ -212,22 +245,26 @@
           h("div", { className: "card" },
             h("div", { className: "card-head", style: { flexWrap: "wrap", rowGap: 10 } },
               h(Ic, { name: "candlestick", size: 18 }),
-              h("div", null, h("div", { className: "ttl" }, "Pergerakan Harga"), h("div", { className: "sub" }, pcfg.label + " · " + intv)),
+              h("div", null, h("div", { className: "ttl" }, "Pergerakan Harga"), h("div", { className: "sub" }, chartMode === "tv" ? "via TradingView" : (isIntra ? ("Intraday · " + intv + " (data nyata)") : (pcfg.label + " · " + intv)))),
               h("div", { className: "spacer" }),
-              h("div", { className: "segmented" }, ["Garis", "Candle"].map(function (t) {
+              h("div", { className: "segmented" }, [["builtin", "Bawaan"], ["tv", "TradingView"]].map(function (m) {
+                return h("button", { key: m[0], className: chartMode === m[0] ? "active" : "", onClick: function () { setChartMode(m[0]); } }, m[1]);
+              })),
+              chartMode === "builtin" ? h("div", { className: "segmented", style: { marginLeft: 8 } }, ["Garis", "Candle"].map(function (t) {
                 return h("button", { key: t, className: ctype === t ? "active" : "", onClick: function () { setCtype(t); } }, t);
-              }))),
+              })) : null),
             h("div", { className: "card-pad", style: { paddingTop: 14 } },
-              h("div", { style: { display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14, alignItems: "center" } },
-                ctrl("Rentang", h("div", { className: "segmented" }, PERIODS.map(function (p) {
-                  return h("button", { key: p.id, className: period === p.id ? "active" : "", onClick: function () { setPeriod(p.id); } }, p.id);
-                }))),
-                ctrl("Interval", h("div", { className: "segmented" }, ["Harian", "Mingguan", "Bulanan"].map(function (iv) {
-                  return h("button", { key: iv, className: intv === iv ? "active" : "", onClick: function () { setIntv(iv); } }, iv);
-                })))),
-              ctype === "Candle"
-                ? h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: [{ values: SM.sma(closes, 20), color: "#4F66E8", width: 1.5 }] })
-                : h(window.AreaChart, { data: closes, dates: dates, height: 280, color: col, axis: true, id: "rk" + period + intv }))),
+              chartMode === "tv"
+                ? h(window.TVChart, { code: R.code, height: 420 })
+                : h(React.Fragment, null,
+                    h("div", { style: { display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14, alignItems: "center" } },
+                      (!isIntra) ? ctrl("Rentang", h("div", { className: "segmented" }, PERIODS.map(function (p) {
+                        return h("button", { key: p.id, className: period === p.id ? "active" : "", onClick: function () { setPeriod(p.id); } }, p.id);
+                      }))) : null,
+                      ctrl("Interval", h("div", { className: "segmented" }, INTERVALS.map(function (iv) {
+                        return h("button", { key: iv, className: intv === iv ? "active" : "", onClick: function () { setIntv(iv); } }, iv);
+                      })))),
+                    chartBody))),
           /* price & trading */
           h("div", { className: "card card-pad" },
             h("div", { className: "section-title", style: { marginBottom: 14 } }, h(Ic, { name: "activity", size: 16 }), "Harga & Perdagangan"),
