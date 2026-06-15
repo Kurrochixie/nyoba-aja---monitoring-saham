@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Saham Monitor — Pemantau Saham Indonesia</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="app/styles.css?v=4" />
+</head>
+<body>
+  <div id="root"><div style="height:100vh;display:flex;align-items:center;justify-content:center;gap:12px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#52617a;font-weight:600"><div style="width:22px;height:22px;border:3px solid #e6f9f1;border-top-color:#16c784;border-radius:50%;animation:spin .8s linear infinite"></div>Memuat data pasar…</div></div>
+  <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <script src="app/data.js?v=4"></script>
+  <script src="app/live.js?v=4"></script>
+
+  <script type="text/babel" src="app/icons.jsx?v=4"></script>
+  <script type="text/babel" src="app/charts.jsx?v=4"></script>
+  <script type="text/babel" src="app/components.jsx?v=4"></script>
+  <script type="text/babel" src="app/tweaks-panel.jsx?v=4"></script>
+  <script type="text/babel" src="app/screen-dashboard.jsx?v=4"></script>
+  <script type="text/babel" src="app/screen-riset.jsx?v=4"></script>
+  <script type="text/babel" src="app/screen-portofolio.jsx?v=4"></script>
+  <script type="text/babel" src="app/screen-misc.jsx?v=4"></script>
+  <script type="text/babel" src="app/screen-styleguide.jsx?v=4"></script>
+  <script type="text/babel" src="app/app.jsx?v=4"></script>
+
+  <!-- Render mock dulu (instan), lalu tarik data IHSG live dari /api/bootstrap
+       dan timpa window.SM secara in-place (jaga referensi getStock), re-render. -->
+  <script type="text/babel" data-presets="env,react">
+    (function () {
+      var root = ReactDOM.createRoot(document.getElementById("root"));
+      var done = false;
+      function go() { if (done) return; done = true; root.render(React.createElement(window.SahamApp)); }
+      fetch("/api/bootstrap")
+        .then(function (r) { if (!r.ok) throw new Error("bad"); return r.json(); })
+        .then(function (d) { if (window.SM_merge) window.SM_merge(d); go(); })
+        .catch(function () { go(); });
+      setTimeout(go, 9000);  // fallback: render dgn data mock bila API lambat
+    })();
+  </script>
+</body>
+</html>

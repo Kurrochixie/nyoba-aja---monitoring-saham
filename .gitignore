@@ -1,0 +1,53 @@
+# =============================================================
+#  Saham Monitor — .gitignore (root)
+#  Mencegah secret, data pribadi, venv, dan artefak ikut ter-commit.
+# =============================================================
+
+# --- Python / virtualenv ---
+.venv/
+**/.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# --- Data & SECRET (WAJIB diabaikan) ---
+# data/app.db menyimpan GoAPI key (tabel kv) + transaksi pribadi.
+data/
+**/data/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# Kunci / kredensial
+.streamlit/secrets.toml
+**/.streamlit/secrets.toml
+.env
+*.env
+secrets.toml
+*.key
+*.pem
+
+# --- Log & runtime lokal ---
+*.log
+_*.log
+_*pid.txt
+_api_pid.txt
+_st_pid.txt
+
+# --- Klon referensi pihak ketiga (AGPL, jangan ikut commit) ---
+FinceptTerminal/
+
+# --- Artefak build/paket ---
+*.tar.gz
+*.zip
+
+# --- Tooling lokal / OS ---
+.claude/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

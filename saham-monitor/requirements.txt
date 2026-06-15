@@ -1,0 +1,32 @@
+# Saham Monitor — dependencies
+
+# UI & core
+streamlit>=1.40          # butuh >=1.40 untuk st.segmented_control
+pandas>=2.2
+numpy>=1.26
+
+# Data
+yfinance>=0.2.40         # harga/history/fundamental (.JK, ^JKSE) — gratis, delayed
+requests>=2.32           # REST: GoAPI/Sectors/Telegram
+
+# Visualisasi
+plotly>=5.22             # candlestick, indikator, donut, NAV
+
+# Analisis teknikal
+ta>=0.11                 # RSI/MACD/Bollinger
+
+# Berita & sentimen
+feedparser>=6.0          # RSS (Google News + outlet ID)
+
+# Alert daemon & notifikasi
+APScheduler>=3.10        # scheduler background (alerts_daemon.py)
+plyer>=2.1               # notifikasi desktop
+
+# Penyimpanan & util
+pyarrow>=16.0
+tzdata                   # zoneinfo Asia/Jakarta di Windows
+python-dateutil>=2.9
+
+# Frontend React (Claude Design) bridge — webapp/ + api.py
+fastapi>=0.110
+uvicorn[standard]>=0.27

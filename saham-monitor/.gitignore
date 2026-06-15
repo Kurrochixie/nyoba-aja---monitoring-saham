@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+*.db
+*.sqlite*
+.streamlit/secrets.toml
+.env
+*.env
+# Log & PID runtime lokal (bisa memuat URL ?api_key=… / output sensitif)
+*.log
+_*.log
+_*pid.txt
+.DS_Store
