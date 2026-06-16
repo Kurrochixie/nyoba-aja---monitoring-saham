@@ -13,7 +13,7 @@
     /* Hanya izinkan http/https (cegah href javascript:/data: dari feed RSS tak tepercaya). */
     var safeLink = n.link && /^https?:\/\//i.test(n.link) ? n.link : null;
     var hasLink = !!safeLink;
-    return h("a", { key: i, className: "card",
+    return h("a", { key: n.link || n.title || i, className: "card",
       href: hasLink ? safeLink : "#",
       target: hasLink ? "_blank" : undefined,
       rel: hasLink ? "noopener noreferrer" : undefined,
@@ -50,9 +50,9 @@
       if (!form.value) { props.toast({ kind: "neg", title: "Nilai kosong", sub: "Isi nilai ambang alert." }); return; }
       var chans = Object.keys(form.channels).filter(function (c) { return form.channels[c]; });
       if (!chans.length) chans = ["in-app"];
-      window.SM_API.addRule({ symbol: form.code, metric: form.metric, op: form.cond, value: form.value, cooldown: parseInt(form.cooldown, 10) || 30, channels: chans });
-      upd("value", "");
-      props.toast({ kind: "pos", title: "Alert dibuat", sub: form.code + " " + form.metric + " " + form.cond + " " + form.value });
+      window.SM_API.addRule({ symbol: form.code, metric: form.metric, op: form.cond, value: form.value, cooldown: parseInt(form.cooldown, 10) || 30, channels: chans })
+        .then(function () { upd("value", ""); props.toast({ kind: "pos", title: "Alert dibuat", sub: form.code + " " + form.metric + " " + form.cond + " " + form.value }); })
+        .catch(function () { props.toast({ kind: "neg", title: "Gagal membuat alert", sub: "Periksa nilai ambang (harus angka)." }); });
     }
     function toggle(i) { var a = alerts[i]; if (a && a.id != null) window.SM_API.toggleRule(a.id, !a.on); }
     function del(i) { var a = alerts[i]; if (a && a.id != null) window.SM_API.delRule(a.id); }
@@ -64,7 +64,7 @@
           alerts.length === 0 ? h("div", { className: "empty" }, h("div", { className: "empty-ic" }, h(Ic, { name: "bell", size: 28 })), h("h3", null, "Tidak ada alert"), h("p", null, "Buat alert pertamamu lewat form di samping.")) :
           h("div", null, alerts.map(function (a, i) {
             var s = SM.getStock(a.code) || { color: "#64748B", name: a.code };
-            return h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 13, padding: "14px 20px", borderBottom: i < alerts.length - 1 ? "1px solid var(--line-2)" : "none", opacity: a.on ? 1 : 0.55 } },
+            return h("div", { key: a.id != null ? a.id : i, style: { display: "flex", alignItems: "center", gap: 13, padding: "14px 20px", borderBottom: i < alerts.length - 1 ? "1px solid var(--line-2)" : "none", opacity: a.on ? 1 : 0.55 } },
               h(window.StockBadge, { code: a.code, color: s.color, size: 34 }),
               h("div", { style: { flex: 1, minWidth: 0 } },
                 h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
@@ -80,7 +80,7 @@
         h("div", { className: "card" },
           h("div", { className: "card-head" }, h(Ic, { name: "clock", size: 18 }), h("div", { className: "ttl" }, "Riwayat Pemicu")),
           h("div", null, SM.ALERTS.history.map(function (hh, i) {
-            return h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 12, padding: "13px 20px", borderBottom: i < SM.ALERTS.history.length - 1 ? "1px solid var(--line-2)" : "none" } },
+            return h("div", { key: (hh.time || "") + "|" + (hh.text || i), style: { display: "flex", alignItems: "center", gap: 12, padding: "13px 20px", borderBottom: i < SM.ALERTS.history.length - 1 ? "1px solid var(--line-2)" : "none" } },
               h("div", { style: { width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", background: hh.state === "pos" ? "var(--up-soft)" : "var(--down-soft)", color: hh.state === "pos" ? "var(--up-text)" : "var(--down-text)" } }, h(Ic, { name: hh.state === "pos" ? "trendingUp" : "trendingDown", size: 15 })),
               h("div", { style: { flex: 1 } }, h("div", { style: { fontWeight: 600, fontSize: 13.5 } }, hh.text)),
               h("div", { className: "num", style: { fontSize: 12, color: "var(--ink-3)" } }, hh.time));
@@ -159,9 +159,10 @@
       kw = (kw || "").trim();
       if (!kw) return;
       if (keywords.indexOf(kw) >= 0) { props.toast({ kind: "info", title: "Sudah ada", sub: "“" + kw + "” sudah jadi kata kunci" }); setNewKw(""); return; }
-      window.SM_API.addNewsKeyword(kw);
-      props.toast({ kind: "pos", title: "Kata kunci ditambah", sub: kw });
-      setNewKw(""); setActive(kw);
+      window.SM_API.addNewsKeyword(kw)
+        .then(function () { props.toast({ kind: "pos", title: "Kata kunci ditambah", sub: kw }); setActive(kw); })
+        .catch(function () { props.toast({ kind: "neg", title: "Gagal menambah", sub: kw }); });
+      setNewKw("");
     }
     function removeKw(kw) {
       if (keywords.length <= 3) { props.toast({ kind: "neg", title: "Minimal 3 kata kunci", sub: "Tambah dulu sebelum menghapus." }); return; }
@@ -277,7 +278,7 @@
   function Pengaturan(props) {
     var wl = SM.STOCKS.map(function (s) { return s.code; });
     var ns = React.useState(""); var newCode = ns[0], setNewCode = ns[1];
-    function addW() { var c = newCode.toUpperCase().trim(); if (c && wl.indexOf(c) < 0) { window.SM_API.addWatch(c); setNewCode(""); props.toast({ kind: "pos", title: "Ditambahkan", sub: c + " masuk watchlist" }); } }
+    function addW() { var c = newCode.toUpperCase().trim(); if (c && wl.indexOf(c) < 0) { window.SM_API.addWatch(c).then(function () { props.toast({ kind: "pos", title: "Ditambahkan", sub: c + " masuk watchlist" }); }).catch(function () { props.toast({ kind: "neg", title: "Gagal menambah", sub: c + " — periksa kode/koneksi" }); }); setNewCode(""); } }
     function delW(c) { window.SM_API.delWatch(c); }
 
     /* Kelola API key — disimpan NYATA ke server (kv lokal di app.db). */

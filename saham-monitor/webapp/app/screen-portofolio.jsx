@@ -26,16 +26,23 @@
     var txns = P.history;
     var fs = React.useState({ date: todayISO(), code: "BBCA", type: "BUY", lot: "", price: "", fee: "" });
     var form = fs[0], setForm = fs[1];
+    var sb = React.useState(false); var submitting = sb[0], setSubmitting = sb[1];
     var hasData = txns.length > 0;
 
     function upd(k, v) { setForm(Object.assign({}, form, k === null ? v : (function () { var o = {}; o[k] = v; return o; })())); }
 
     function submit() {
+      if (submitting) return;
       var lot = parseInt(form.lot, 10), price = parseInt(String(form.price).replace(/\./g, ""), 10);
       if (!lot || !price) { props.toast({ kind: "neg", title: "Lengkapi data", sub: "Lot dan harga wajib diisi." }); return; }
-      window.SM_API.addTxn({ date: form.date, code: form.code, type: form.type, lot: lot, price: price, fee: parseInt(form.fee || "0", 10) || 0 });
-      setForm(Object.assign({}, form, { lot: "", price: "", fee: "" }));
-      props.toast({ kind: form.type === "BUY" ? "pos" : "info", title: "Transaksi dicatat", sub: form.type + " " + lot + " lot " + form.code + " @ " + SM.fmt(price) });
+      setSubmitting(true);
+      window.SM_API.addTxn({ date: form.date, code: form.code, type: form.type, lot: lot, price: price, fee: parseInt(form.fee || "0", 10) || 0 })
+        .then(function () {
+          setSubmitting(false);
+          setForm(Object.assign({}, form, { lot: "", price: "", fee: "" }));
+          props.toast({ kind: form.type === "BUY" ? "pos" : "info", title: "Transaksi dicatat", sub: form.type + " " + lot + " lot " + form.code + " @ " + SM.fmt(price) });
+        })
+        .catch(function () { setSubmitting(false); props.toast({ kind: "neg", title: "Gagal mencatat", sub: "Periksa input (BUY/SELL, lot & harga > 0) atau koneksi." }); });
     }
     function del(t) { if (t && t.id != null) window.SM_API.delTxn(t.id); }
 
@@ -75,7 +82,7 @@
             form.lot && form.price ? h("div", { style: { display: "flex", justifyContent: "space-between", padding: "10px 12px", background: "var(--surface-3)", borderRadius: 11, fontSize: 13 } },
               h("span", { style: { color: "var(--ink-2)", fontWeight: 600 } }, "Nilai transaksi"),
               h("span", { className: "num", style: { fontWeight: 800 } }, SM.rupiah(parseInt(form.lot, 10) * 100 * parseInt(form.price, 10)))) : null,
-            h("button", { className: "btn btn-primary btn-block", onClick: submit }, h(Ic, { name: "check", size: 16 }), "Simpan Transaksi"))))
+            h("button", { className: "btn btn-primary btn-block", disabled: submitting, onClick: submit }, h(Ic, { name: "check", size: 16 }), submitting ? "Menyimpan…" : "Simpan Transaksi"))))
     );
   }
 
@@ -161,7 +168,7 @@
       h("div", { className: "card-head" }, h(Ic, { name: "clock", size: 18 }), h("div", { className: "ttl" }, "Riwayat Transaksi"), h("div", { className: "sub", style: { marginLeft: "auto" } }, txns.length + " transaksi")),
       h("div", null, txns.map(function (t, i) {
         var s = SM.getStock(t.code) || { color: "#64748B", name: t.code };
-        return h("div", { key: i, style: { display: "flex", alignItems: "center", gap: 13, padding: "13px 20px", borderBottom: i < txns.length - 1 ? "1px solid var(--line-2)" : "none" } },
+        return h("div", { key: t.id != null ? t.id : i, style: { display: "flex", alignItems: "center", gap: 13, padding: "13px 20px", borderBottom: i < txns.length - 1 ? "1px solid var(--line-2)" : "none" } },
           h("span", { className: "badge " + (t.type === "BUY" ? "pos" : "neg"), style: { width: 50, justifyContent: "center" } }, t.type),
           h(window.StockBadge, { code: t.code, color: s.color, size: 30 }),
           h("div", { style: { flex: 1, minWidth: 0 } },

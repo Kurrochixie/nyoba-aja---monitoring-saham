@@ -407,7 +407,7 @@
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 } },
           sigs.map(function (sig, i) {
             var ic = sig.state === "pos" ? "trendingUp" : (sig.state === "neg" ? "trendingDown" : "minus");
-            return h("div", { className: "signal", key: i },
+            return h("div", { className: "signal", key: sig.name || i },
               h("div", { className: "signal-ic " + sig.state }, h(Ic, { name: ic, size: 17 })),
               h("div", { style: { minWidth: 0 } }, h("div", { className: "lbl" }, sig.name), h("div", { className: "vl" }, sig.value)));
           }))),

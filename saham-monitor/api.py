@@ -112,7 +112,14 @@ def _stock(sym):
     code = utils.short_code(sym)
     q = ms.get_quote_obj(sym)
     if not q:
-        return None
+        # Placeholder: tetap tampilkan emiten (data belum tersedia) — JANGAN hilangkan dari watchlist.
+        return {
+            "code": code, "name": utils.display_name(sym), "sector": SECTOR_MAP.get(code, ""),
+            "price": 0, "chg": 0, "chgPct": 0, "high": None, "low": None,
+            "vol": "—", "volume": 0, "color": COLOR_MAP.get(code, "#3B6FB0"),
+            "prevClose": 0, "spark": [], "seed": sum(ord(c) for c in code) % 900 + 10,
+            "volat": 0.02, "stale": True,
+        }
     return {
         "code": code, "name": ms.get_name(sym) if False else utils.display_name(sym),
         "sector": SECTOR_MAP.get(code, ""),

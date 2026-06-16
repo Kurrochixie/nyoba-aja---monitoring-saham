@@ -85,9 +85,9 @@
                     h(window.StockBadge, { code: s.code, color: s.color, size: 32 }),
                     h("div", null, h("div", { className: "cell-code" }, s.code), h("div", { className: "cell-name" }, s.name)))),
                   h("td", null, h(window.Sparkline, { data: s.spark, width: 84, height: 30, id: s.code, area: false })),
-                  h("td", { className: "r num", style: { fontWeight: 700 } }, SM.fmt(s.price)),
-                  h("td", { className: "r num val-" + d }, SM.signed(s.chg)),
-                  h("td", { className: "r" }, h("div", { style: { display: "flex", justifyContent: "flex-end" } }, h(window.Delta, { pct: s.chgPct }))),
+                  h("td", { className: "r num", style: { fontWeight: 700 } }, s.stale ? "—" : SM.fmt(s.price)),
+                  h("td", { className: "r num val-" + d }, s.stale ? "—" : SM.signed(s.chg)),
+                  h("td", { className: "r" }, h("div", { style: { display: "flex", justifyContent: "flex-end" } }, s.stale ? h("span", { style: { color: "var(--ink-3)" } }, "—") : h(window.Delta, { pct: s.chgPct }))),
                   h("td", { className: "r num", style: { color: "var(--ink-2)" } }, s.vol));
               }))))),
 

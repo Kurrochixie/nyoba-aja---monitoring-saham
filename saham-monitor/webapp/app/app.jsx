@@ -110,8 +110,9 @@
         onClose: function () { setAddOpen(false); },
         onAdd: function (code) {
           if (!code) return;
-          window.SM_API.addWatch(code);
-          toast({ kind: "pos", title: "Ditambahkan", sub: code + " masuk watchlist" });
+          window.SM_API.addWatch(code)
+            .then(function () { toast({ kind: "pos", title: "Ditambahkan", sub: code + " masuk watchlist" }); })
+            .catch(function () { toast({ kind: "neg", title: "Gagal menambah", sub: code + " — periksa kode atau koneksi" }); });
         }
       }) : null,
       h(TweaksUI, { t: t, setTweak: setTweak })
