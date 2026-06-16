@@ -48,4 +48,9 @@ def singleton(fn):
             if "v" not in holder:
                 holder["v"] = fn(*args, **kwargs)
             return holder["v"]
+
+    def clear():
+        with lock:
+            holder.clear()
+    wrapped.clear = clear
     return wrapped

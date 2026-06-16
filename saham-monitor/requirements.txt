@@ -1,32 +1,34 @@
 # Saham Monitor — dependencies
+# Upper-bound dipin ke major berikutnya agar build reproducible & tak menarik
+# rilis major yang breaking. Untuk pin EXACT, gunakan: pip freeze > requirements.lock
 
 # UI & core
-streamlit>=1.40          # butuh >=1.40 untuk st.segmented_control
-pandas>=2.2
-numpy>=1.26
+streamlit>=1.40,<2       # butuh >=1.40 untuk st.segmented_control
+pandas>=2.2,<4
+numpy>=1.26,<3
 
 # Data
-yfinance>=0.2.40         # harga/history/fundamental (.JK, ^JKSE) — gratis, delayed
-requests>=2.32           # REST: GoAPI/Sectors/Telegram
+yfinance>=1.4,<2         # harga/history/fundamental (.JK, ^JKSE) — gratis, delayed; API rapuh
+requests>=2.32,<3        # REST: GoAPI/Sectors/Telegram
 
 # Visualisasi
-plotly>=5.22             # candlestick, indikator, donut, NAV
+plotly>=5.22,<7          # candlestick, indikator, donut, NAV
 
 # Analisis teknikal
-ta>=0.11                 # RSI/MACD/Bollinger
+ta>=0.11,<1              # RSI/MACD/Bollinger
 
 # Berita & sentimen
-feedparser>=6.0          # RSS (Google News + outlet ID)
+feedparser>=6.0,<7       # RSS (Google News + outlet ID)
 
 # Alert daemon & notifikasi
-APScheduler>=3.10        # scheduler background (alerts_daemon.py)
-plyer>=2.1               # notifikasi desktop
+APScheduler>=3.10,<4     # scheduler background (alerts_daemon.py)
+plyer>=2.1,<3            # notifikasi desktop
 
 # Penyimpanan & util
-pyarrow>=16.0
-tzdata                   # zoneinfo Asia/Jakarta di Windows
-python-dateutil>=2.9
+pyarrow>=16.0,<25
+tzdata>=2024.1           # zoneinfo Asia/Jakarta di Windows
+python-dateutil>=2.9,<3
 
 # Frontend React (Claude Design) bridge — webapp/ + api.py
-fastapi>=0.110
-uvicorn[standard]>=0.27
+fastapi>=0.110,<1
+uvicorn[standard]>=0.27,<1

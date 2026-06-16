@@ -444,7 +444,10 @@ _scheduler = None
 
 @asynccontextmanager
 async def lifespan(_app):
-    """Evaluasi alert berkala (edge-trigger + cooldown) selama server hidup."""
+    """Evaluasi alert berkala (edge-trigger + cooldown) selama server hidup.
+
+    Dilewati bila env SAHAM_DISABLE_INPROC_ALERTS diset — pakai itu saat menjalankan
+    alerts_daemon.py terpisah agar tidak ada DUA scheduler (cegah alert/notif dobel)."""
     global _scheduler
 
     def _eval():
@@ -455,8 +458,14 @@ async def lifespan(_app):
         except Exception as e:  # noqa: BLE001
             logging.error("alert eval: %s", e)
 
+    if os.environ.get("SAHAM_DISABLE_INPROC_ALERTS"):
+        logging.info("Alert in-process dinonaktifkan (SAHAM_DISABLE_INPROC_ALERTS); andalkan alerts_daemon.")
+        yield
+        return
+
     _scheduler = BackgroundScheduler(timezone="Asia/Jakarta")
-    _scheduler.add_job(_eval, "interval", seconds=60, id="alert_eval", max_instances=1)
+    _scheduler.add_job(_eval, "interval", seconds=60, id="alert_eval",
+                       max_instances=1, replace_existing=True)  # idempoten
     _scheduler.start()
     yield
     try:
