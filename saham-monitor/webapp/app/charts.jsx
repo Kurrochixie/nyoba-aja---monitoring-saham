@@ -34,8 +34,18 @@
 
   /* =================== Sparkline (fixed size) =================== */
   function Sparkline(props) {
-    var data = props.data || [];
+    /* Buang nilai non-angka/NaN/Inf supaya tak menghasilkan koordinat rusak. */
+    var data = (props.data || []).filter(function (v) {
+      return typeof v === "number" && v === v && v !== Infinity && v !== -Infinity;
+    });
     var W = props.width || 110, H = props.height || 34, pad = 3;
+    /* Data kosong / cuma 1 titik (mis. quote gagal → spark []): render garis datar
+       tipis sebagai placeholder, JANGAN crash (dulu pts[-1][0] → TypeError). */
+    if (data.length < 2) {
+      return h("svg", { width: W, height: H, viewBox: "0 0 " + W + " " + H, style: { display: "block" } },
+        h("line", { x1: pad, x2: W - pad, y1: H / 2, y2: H / 2,
+          stroke: "var(--ink-4)", strokeWidth: 1.5, strokeLinecap: "round", opacity: 0.45 }));
+    }
     var color = props.color || (data[data.length - 1] >= data[0] ? UP : DOWN);
     var min = Math.min.apply(null, data), max = Math.max.apply(null, data);
     var rng = (max - min) || 1;
