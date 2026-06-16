@@ -37,51 +37,11 @@
     }
     return out;
   }
-
-  function buildConsensus(s, R) {
-    var seed = s.seed;
-    var bull = R.verdict === "BULLISH", bear = R.verdict === "BEARISH";
-    var total = 12 + (seed % 9);
-    var buy = Math.round(total * (bull ? 0.62 : bear ? 0.18 : 0.42));
-    var sell = Math.round(total * (bear ? 0.5 : bull ? 0.08 : 0.16));
-    var hold = Math.max(0, total - buy - sell);
-    var label = (buy / total > 0.55) ? "Beli Kuat" : (buy / total > 0.4) ? "Beli" : (sell / total > 0.4) ? "Jual" : "Tahan";
-    var price = R.price;
-    var targetAvg = Math.round(price * (bull ? 1.18 : bear ? 0.93 : 1.06));
-    var targetLow = Math.round(price * (bear ? 0.8 : 0.9));
-    var targetHigh = Math.round(price * (bull ? 1.4 : 1.18));
-    return { total: total, buy: buy, hold: hold, sell: sell, label: label, targetLow: targetLow, targetAvg: targetAvg, targetHigh: targetHigh, upside: (targetAvg - price) / price * 100 };
-  }
-
-  function buildFinancials(s, R) {
-    var seed = s.seed;
-    var baseRev = 2000 + (seed % 30) * 360;       // miliar
-    var margin = 0.08 + (seed % 12) / 100;
-    var labels = ["Q1 '25", "Q2 '25", "Q3 '25", "Q4 '25", "Q1 '26"];
-    var bias = R.verdict === "BULLISH" ? 1.06 : R.verdict === "BEARISH" ? 0.965 : 1.015;
-    var rev = baseRev, arr = [];
-    for (var i = 0; i < labels.length; i++) {
-      var rr = Math.round(rev * (0.92 + ((seed * (i + 3)) % 18) / 100));
-      var np = Math.round(rr * margin * (0.8 + ((seed * (i + 1)) % 34) / 100));
-      arr.push({ label: labels[i], revenue: rr, profit: np });
-      rev = rev * bias;
-    }
-    var revYoY = (arr[4].revenue - arr[0].revenue) / arr[0].revenue * 100;
-    var profitYoY = (arr[4].profit - arr[0].profit) / arr[0].profit * 100;
-    function T(v) { return "Rp " + SM.fmt(v / 1000, 2) + " T"; }
-    var annualRev = arr.reduce(function (a, x) { return a + x.revenue; }, 0);
-    var annualNp = arr.reduce(function (a, x) { return a + x.profit; }, 0);
-    var lines = [
-      { name: "Pendapatan", value: T(annualRev), yoy: revYoY },
-      { name: "Laba Kotor", value: T(annualRev * 0.34), yoy: revYoY * 0.92 },
-      { name: "Laba Usaha", value: T(annualRev * 0.2), yoy: profitYoY * 0.95 },
-      { name: "Laba Bersih", value: T(annualNp), yoy: profitYoY },
-      { name: "Total Aset", value: T(annualRev * 2.4), yoy: 6 + (seed % 8) },
-      { name: "Ekuitas", value: T(annualRev * 1.3), yoy: 5 + (seed % 7) },
-      { name: "Liabilitas", value: T(annualRev * 1.1), yoy: 3 + (seed % 6) },
-      { name: "Arus Kas Operasi", value: T(annualRev * 0.22), yoy: profitYoY * 0.8 }
-    ];
-    return { quarters: arr, revYoY: revYoY, profitYoY: profitYoY, lines: lines, margin: margin * 100, period: "TTM · 5 kuartal terakhir" };
+  function resampleDates(dates, f) {
+    if (f <= 1) return dates;
+    var out = [];
+    for (var i = 0; i < dates.length; i += f) { out.push(dates[Math.min(i + f - 1, dates.length - 1)]); }
+    return out;
   }
 
   function buildResearch(code) {
@@ -111,11 +71,16 @@
         ]
       };
     }
-    base.consensus = buildConsensus(s, base);
-    base.financials = buildFinancials(s, base);
-    // news sentiment counts (deterministic)
-    var sd = s.seed;
-    base.sentiment = { pos: 3 + sd % 6, neg: sd % 3, neu: 4 + sd % 5 };
+    /* Konsensus & keuangan dari backend NYATA (null bila tak tersedia) — tidak difabrikasi. */
+    if (base.consensus === undefined) base.consensus = null;
+    if (base.financials === undefined) base.financials = null;
+    /* Sentimen dari berita NYATA yang menyebut emiten ini. */
+    var ni = (SM.NEWS.items || []).filter(function (n) { return n.tag === code || (n.title || "").toUpperCase().indexOf(code) >= 0; });
+    base.sentiment = {
+      pos: ni.filter(function (n) { return n.sentiment === "pos"; }).length,
+      neg: ni.filter(function (n) { return n.sentiment === "neg"; }).length,
+      neu: ni.filter(function (n) { return n.sentiment === "neu"; }).length
+    };
     return base;
   }
 
@@ -166,14 +131,17 @@
   function DecisionStrip(R) {
     var c = R.consensus, sent = R.sentiment;
     var vClass = R.verdict === "BULLISH" ? "pos" : (R.verdict === "BEARISH" ? "neg" : "neu");
+    var sentTotal = sent.pos + sent.neg + sent.neu;
     var sentNet = sent.pos - sent.neg;
-    var sentLabel = sentNet > 1 ? "Positif" : (sentNet < 0 ? "Negatif" : "Netral");
+    var sentLabel = sentTotal === 0 ? "—" : (sentNet > 1 ? "Positif" : (sentNet < 0 ? "Negatif" : "Netral"));
     var sentClass = sentNet > 1 ? "pos" : (sentNet < 0 ? "neg" : "neu");
-    var conClass = /Beli/.test(c.label) ? "pos" : (c.label === "Jual" ? "neg" : "neu");
+    var conVal = c ? (c.recommendation || (c.upside >= 0 ? "Positif" : "Negatif")) : "—";
+    var conClass = c ? ((/Buy|Beli/i.test(c.recommendation || "") || c.upside > 3) ? "pos" : ((/Sell|Jual/i.test(c.recommendation || "") || c.upside < -3) ? "neg" : "neu")) : "neu";
+    var conSub = c ? ((c.upside >= 0 ? "Potensi +" : "Potensi ") + SM.fmt(c.upside, 1) + "% ke target" + (c.analysts ? " · " + c.analysts + " analis" : "")) : "Belum ada cakupan analis";
     return h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 18 } },
       decCard("candlestick", "Sinyal Teknikal", R.verdict, vClass, R.verdict === "BULLISH" ? "Tren menguat" : R.verdict === "BEARISH" ? "Tren melemah" : "Sinyal tercampur"),
-      decCard("sparkles", "Sentimen Berita", sentLabel, sentClass, sent.pos + " positif · " + sent.neg + " negatif · " + sent.neu + " netral"),
-      decCard("gauge", "Konsensus Analis", c.label, conClass, (c.upside >= 0 ? "Potensi +" : "Potensi ") + SM.fmt(c.upside, 1) + "% ke target")
+      decCard("sparkles", "Sentimen Berita", sentLabel, sentClass, sentTotal === 0 ? "Belum ada berita terkait" : (sent.pos + " positif · " + sent.neg + " negatif · " + sent.neu + " netral")),
+      decCard("gauge", "Konsensus Analis", conVal, conClass, conSub)
     );
   }
   function decCard(ic, label, value, cls, sub) {
@@ -194,43 +162,40 @@
     var is = useState("Harian"); var intv = is[0], setIntv = is[1];
     var cs = useState("Garis"); var ctype = cs[0], setCtype = cs[1];
     var cms = useState("builtin"); var chartMode = cms[0], setChartMode = cms[1];
-    var idd = useState(null); var intra = idd[0], setIntra = idd[1];
+    var idd = useState(null); var fetched = idd[0], setFetched = idd[1];
 
     var isIntra = intv === "5m" || intv === "15m";
+    var pcfg = PERIODS.filter(function (p) { return p.id === period; })[0];
 
-    /* Intraday: tarik candle NYATA dari API (yfinance) saat interval 5m/15m. */
+    /* Candle NYATA dari API: intraday (5m/15m) atau harian (rentang dari kontrol Rentang). */
     useEffect(function () {
-      if (!isIntra) { setIntra(null); return; }
-      var alive = true; setIntra({ loading: true });
-      var range = intv === "5m" ? "1H" : "5H";
+      var alive = true; setFetched({ loading: true });
+      var range = isIntra ? (intv === "5m" ? "1H" : "5H") : period;
       fetch("/api/candles?code=" + encodeURIComponent(R.code) + "&range=" + range)
         .then(function (r) { return r.json(); })
-        .then(function (d) { if (alive) setIntra(d && d.ok && d.candles && d.candles.length ? d : { empty: true }); })
-        .catch(function () { if (alive) setIntra({ empty: true }); });
+        .then(function (d) { if (alive) setFetched(d && d.ok && d.candles && d.candles.length ? d : { empty: true }); })
+        .catch(function () { if (alive) setFetched({ empty: true }); });
       return function () { alive = false; };
-    }, [R.code, intv]);
+    }, [R.code, intv, period]);
 
-    var pcfg = PERIODS.filter(function (p) { return p.id === period; })[0];
-    var rawFactor = intv === "Mingguan" ? 5 : (intv === "Bulanan" ? 22 : 1);
-    var factor = Math.min(rawFactor, Math.max(1, Math.floor(pcfg.n / 6)));
-    var seedCandles = useMemo(function () {
-      return resample(SM.genCandles(s.seed * 5 + pcfg.n, pcfg.n, R.price, pcfg.v), factor);
-    }, [R.code, period, intv]);
-    var seedDates = useMemo(function () { return SM.genDates(seedCandles.length, isIntra ? "Harian" : intv); }, [R.code, period, intv]);
-
-    var candles = isIntra ? ((intra && intra.candles) || []) : seedCandles;
-    var dates = isIntra ? ((intra && intra.dates) || []) : seedDates;
+    var factor = (!isIntra && intv === "Mingguan") ? 5 : ((!isIntra && intv === "Bulanan") ? 22 : 1);
+    var rawC = (fetched && fetched.candles) || [];
+    var rawD = (fetched && fetched.dates) || [];
+    var candles = factor > 1 ? resample(rawC, factor) : rawC;
+    var dates = factor > 1 ? resampleDates(rawD, factor) : rawD;
     var closes = candles.map(function (c) { return c.c; });
     var col = R.chgPct >= 0 ? "#16C784" : "#F6465D";
     var rangePos = (R.price - R.w52low) / (R.w52high - R.w52low) * 100;
     var INTERVALS = ["5m", "15m", "Harian", "Mingguan", "Bulanan"];
+    var loading = !!(fetched && fetched.loading);
+    var empty = !loading && !candles.length;
 
     var chartBody;
-    if (isIntra && intra && intra.loading) {
-      chartBody = h("div", { style: { height: 300, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 } }, "Memuat data intraday…");
-    } else if (isIntra && intra && intra.empty) {
+    if (loading) {
+      chartBody = h("div", { style: { height: 300, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 } }, "Memuat data harga…");
+    } else if (empty) {
       chartBody = h("div", { style: { height: 300, display: "grid", placeItems: "center", textAlign: "center", padding: 24, border: "1px dashed var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 13 } },
-        h("div", null, h("div", { style: { fontWeight: 700, color: "var(--ink-2)", marginBottom: 4 } }, "Data intraday belum tersedia"), "Tersedia saat jam bursa untuk emiten likuid. Coba interval Harian."));
+        h("div", null, h("div", { style: { fontWeight: 700, color: "var(--ink-2)", marginBottom: 4 } }, "Data harga belum tersedia"), isIntra ? "Intraday tersedia saat jam bursa untuk emiten likuid. Coba interval Harian." : "Coba lagi sebentar atau ganti emiten/rentang."));
     } else {
       chartBody = ctype === "Candle"
         ? h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: closes.length > 20 ? [{ values: SM.sma(closes, 20), color: "#4F66E8", width: 1.5 }] : [] })
@@ -245,7 +210,7 @@
           h("div", { className: "card" },
             h("div", { className: "card-head", style: { flexWrap: "wrap", rowGap: 10 } },
               h(Ic, { name: "candlestick", size: 18 }),
-              h("div", null, h("div", { className: "ttl" }, "Pergerakan Harga"), h("div", { className: "sub" }, chartMode === "tv" ? "via TradingView" : (isIntra ? ("Intraday · " + intv + " (data nyata)") : (pcfg.label + " · " + intv)))),
+              h("div", null, h("div", { className: "ttl" }, "Pergerakan Harga"), h("div", { className: "sub" }, chartMode === "tv" ? "via TradingView" : (isIntra ? ("Intraday · " + intv) : (pcfg.label + " · " + intv)))),
               h("div", { className: "spacer" }),
               h("div", { className: "segmented" }, [["builtin", "Bawaan"], ["tv", "TradingView"]].map(function (m) {
                 return h("button", { key: m[0], className: chartMode === m[0] ? "active" : "", onClick: function () { setChartMode(m[0]); } }, m[1]);
@@ -295,22 +260,21 @@
   /* ===================== Konsensus & Prediksi card ===================== */
   function ConsensusCard(R) {
     var c = R.consensus;
+    if (!c) return h("div", { className: "card card-pad" },
+      h("div", { className: "section-title", style: { marginBottom: 10 } }, h(Ic, { name: "gauge", size: 16 }), "Konsensus & Prediksi"),
+      h("div", { className: "empty", style: { padding: "26px 10px" } },
+        h("div", { className: "empty-ic" }, h(Ic, { name: "gauge", size: 26 })),
+        h("h3", null, "Konsensus analis belum tersedia"),
+        h("p", null, "Tidak ada cakupan analis untuk emiten ini dari sumber data saat ini.")));
     var up = c.upside >= 0;
     var lo = c.targetLow, hi = c.targetHigh;
-    function pos(v) { return Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100)); }
-    var labelClass = /Beli/.test(c.label) ? "pos" : (c.label === "Jual" ? "neg" : "neu");
+    function pos(v) { return Math.max(0, Math.min(100, hi > lo ? (v - lo) / (hi - lo) * 100 : 50)); }
+    var recClass = /Buy|Beli/i.test(c.recommendation || "") ? "pos" : (/Sell|Jual/i.test(c.recommendation || "") ? "neg" : "neu");
     return h("div", { className: "card card-pad" },
       h("div", { style: { display: "flex", alignItems: "center", marginBottom: 14 } },
         h("div", { className: "section-title" }, h(Ic, { name: "gauge", size: 16 }), "Konsensus & Prediksi"),
-        h("span", { className: "badge " + labelClass, style: { marginLeft: "auto" } }, c.label)),
-      /* rating distribution */
-      h("div", { className: "progress", style: { height: 10, marginBottom: 10 } },
-        h("span", { style: { width: (c.buy / c.total * 100) + "%", background: "var(--up)" } }),
-        h("span", { style: { width: (c.hold / c.total * 100) + "%", background: "var(--ink-4)" } }),
-        h("span", { style: { width: (c.sell / c.total * 100) + "%", background: "var(--down)" } })),
-      h("div", { style: { display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 18 } },
-        ratingLeg("Beli", c.buy, "var(--up-text)"), ratingLeg("Tahan", c.hold, "var(--ink-2)"), ratingLeg("Jual", c.sell, "var(--down-text)"),
-        h("span", { style: { color: "var(--ink-3)", fontWeight: 600 } }, c.total + " analis")),
+        c.recommendation ? h("span", { className: "badge " + recClass, style: { marginLeft: "auto" } }, c.recommendation) : null),
+      c.analysts ? h("div", { style: { fontSize: 12.5, color: "var(--ink-3)", fontWeight: 600, marginBottom: 16 } }, c.analysts + " analis meliput emiten ini") : null,
       /* target price */
       h("div", { className: "eyebrow", style: { marginBottom: 8 } }, "Target Harga 12 Bulan"),
       h("div", { style: { position: "relative", height: 8, background: "var(--surface-3)", borderRadius: 99, marginBottom: 4 } },
@@ -342,43 +306,32 @@
   /* ===================== Laporan Keuangan tab ===================== */
   function KeuanganTab(props) {
     var R = props.R, fin = R.financials;
-    var maxRev = Math.max.apply(null, fin.quarters.map(function (q) { return q.revenue; }));
+    if (!fin) return h("div", { className: "card screen" }, h("div", { className: "empty", style: { padding: "40px 16px" } },
+      h("div", { className: "empty-ic" }, h(Ic, { name: "coins", size: 30 })),
+      h("h3", null, "Laporan keuangan belum tersedia"),
+      h("p", null, "Ringkasan keuangan untuk emiten ini belum tersedia dari sumber data saat ini.")));
+    function fkpi(label, value, growth) {
+      var hasG = growth != null;
+      var up = hasG && growth >= 0;
+      return h("div", { style: { flex: "1 1 180px", minWidth: 160, padding: "16px 18px", background: "var(--surface-2)", borderRadius: 14, border: "1px solid var(--line)" } },
+        h("div", { style: { fontSize: 12, color: "var(--ink-3)", fontWeight: 600, marginBottom: 6 } }, label),
+        h("div", { className: "num", style: { fontSize: 22, fontWeight: 800 } }, value),
+        hasG ? h("div", { className: "num", style: { fontSize: 12.5, fontWeight: 700, marginTop: 4, color: up ? "var(--up-text)" : "var(--down-text)" } }, (up ? "+" : "") + SM.fmt(growth, 1) + "% YoY") : null);
+    }
+    function pctv(v) { return (v == null || v === 0) ? "—" : SM.fmt(v, 1) + "%"; }
     return h("div", { className: "screen grid", style: { gap: 18 } },
-      h("div", { className: "ringkasan-grid" },
-        /* quarterly chart */
-        h("div", { className: "card card-pad" },
-          h("div", { style: { display: "flex", alignItems: "center", marginBottom: 4 } },
-            h("div", { className: "section-title" }, h(Ic, { name: "barChart", size: 16 }), "Pendapatan & Laba Bersih"),
-            h("div", { style: { marginLeft: "auto", display: "flex", gap: 12 } }, leg("#4F66E8", "Pendapatan"), leg("#16C784", "Laba Bersih"))),
-          h("div", { className: "sub", style: { marginBottom: 18, color: "var(--ink-3)", fontSize: 12.5 } }, fin.period + " · dalam miliar Rupiah"),
-          h("div", { style: { display: "flex", alignItems: "flex-end", justifyContent: "space-around", gap: 10, height: 200, borderBottom: "1px solid var(--line)", paddingBottom: 2 } },
-            fin.quarters.map(function (q, i) {
-              return h("div", { key: i, style: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: 1 } },
-                h("div", { style: { display: "flex", alignItems: "flex-end", gap: 5, height: 165 } },
-                  bar(q.revenue / maxRev * 165, "#4F66E8", SM.fmt(q.revenue)),
-                  bar(q.profit / maxRev * 165, "#16C784", SM.fmt(q.profit))),
-                h("div", { style: { fontSize: 11.5, color: "var(--ink-3)", fontWeight: 600 } }, q.label));
-            })),
-          h("div", { style: { display: "flex", gap: 14, marginTop: 16 } },
-            growthStat("Pertumbuhan Pendapatan (YoY)", fin.revYoY),
-            growthStat("Pertumbuhan Laba (YoY)", fin.profitYoY),
-            growthStat("Margin Laba Bersih", fin.margin, true))),
-        /* key lines */
-        h("div", { className: "card", style: { height: "fit-content" } },
-          h("div", { className: "card-head" }, h(Ic, { name: "coins", size: 18 }), h("div", { className: "ttl" }, "Ikhtisar Keuangan")),
-          h("table", { className: "tbl" },
-            h("thead", null, h("tr", null, h("th", null, "Pos"), h("th", { className: "r" }, "Nilai"), h("th", { className: "r" }, "YoY"))),
-            h("tbody", null, fin.lines.map(function (ln, i) {
-              var up = ln.yoy >= 0;
-              return h("tr", { key: i, style: { cursor: "default" } },
-                h("td", { style: { fontWeight: 600, color: "var(--ink-2)" } }, ln.name),
-                h("td", { className: "r num", style: { fontWeight: 700 } }, ln.value),
-                h("td", { className: "r" }, h("span", { className: "num val-" + (up ? "up" : "down"), style: { fontWeight: 700, fontSize: 12.5 } }, SM.pct(ln.yoy, 1))));
-            })))) ),
+      h("div", { className: "card card-pad" },
+        h("div", { className: "section-title", style: { marginBottom: 4 } }, h(Ic, { name: "coins", size: 16 }), "Ikhtisar Keuangan"),
+        h("div", { className: "sub", style: { marginBottom: 16, color: "var(--ink-3)", fontSize: 12.5 } }, fin.period),
+        h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
+          fkpi("Pendapatan", "Rp " + fin.revenue, fin.revenueGrowth),
+          fkpi("Laba Bersih", "Rp " + fin.netIncome, fin.earningsGrowth),
+          fkpi("Margin Kotor", pctv(fin.grossMargin), null),
+          fkpi("Margin Bersih", pctv(fin.profitMargin), null))),
       h("div", { className: "card card-pad", style: { display: "flex", alignItems: "flex-start", gap: 10 } },
         h(Ic, { name: "info", size: 16, style: { color: "var(--accent)", flexShrink: 0, marginTop: 1 } }),
         h("div", { style: { fontSize: 12.5, color: "var(--ink-2)", lineHeight: 1.5 } },
-          "Data laporan keuangan ditarik dari publikasi emiten via penyedia data fundamental (mis. IDX / Sectors / GOAPI). Angka di sini contoh — backend mengisi nilai aktual per kuartal.")));
+          "Angka keuangan TTM (12 bulan terakhir) dari yfinance. Untuk rincian per kuartal & neraca lengkap, lihat laporan resmi emiten di IDX.")));
   }
   function bar(hpx, color, title) {
     return h("div", { title: title, style: { width: 18, height: Math.max(2, hpx), background: "linear-gradient(180deg," + color + "," + window.shade(color, -20) + ")", borderRadius: "4px 4px 2px 2px" } });
@@ -410,22 +363,49 @@
 
   /* ===================== Teknikal tab ===================== */
   function TeknikalTab(props) {
-    var R = props.R, s = props.s;
-    var candles = useMemo(function () { return SM.genCandles(s.seed * 5 + 130, 130, R.price, 0.024); }, [R.code]);
+    var R = props.R;
+    var fs = useState(null); var fetched = fs[0], setFetched = fs[1];
+    useEffect(function () {
+      var alive = true; setFetched({ loading: true });
+      fetch("/api/candles?code=" + encodeURIComponent(R.code) + "&range=6B")
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (alive) setFetched(d && d.ok && d.candles && d.candles.length ? d : { empty: true }); })
+        .catch(function () { if (alive) setFetched({ empty: true }); });
+      return function () { alive = false; };
+    }, [R.code]);
+    var candles = (fetched && fetched.candles) || [];
     var closes = candles.map(function (c) { return c.c; });
-    var boll = bollinger(closes, 20, 2);
+    var boll = closes.length > 20 ? bollinger(closes, 20, 2) : { upper: [], lower: [], mid: [] };
     var rsi = SM.rsiSeries(closes, 14);
     var macd = SM.macdSeries(closes);
+    var loading = !!(fetched && fetched.loading);
+    var empty = !loading && !candles.length;
     var vClass = R.verdict === "BULLISH" ? "bull" : (R.verdict === "BEARISH" ? "bear" : "neutral");
+    var sigs = R.signals || [];
+    var nPos = sigs.filter(function (x) { return x.state === "pos"; }).length;
+    var nNeg = sigs.filter(function (x) { return x.state === "neg"; }).length;
+    var narrative = sigs.length
+      ? (nPos + " sinyal positif, " + nNeg + " negatif, sisanya netral — detail per indikator di bawah.")
+      : "Sinyal teknikal dihitung dari data harga nyata; lihat detail per indikator di bawah.";
+    var chartBody = loading
+      ? h("div", { style: { height: 290, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 } }, "Memuat data harga…")
+      : empty
+        ? h("div", { style: { height: 290, display: "grid", placeItems: "center", border: "1px dashed var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 13 } }, "Data harga belum tersedia.")
+        : h(React.Fragment, null,
+            h(window.CandleChart, { candles: candles, height: 290, bands: boll, overlays: [
+              { values: SM.sma(closes, 20), color: "#4F66E8", width: 1.5 }, { values: SM.sma(closes, 50), color: "#E8A93C", width: 1.5 }
+            ] }),
+            h("div", { style: { borderTop: "1px solid var(--line-2)", marginTop: 6, paddingTop: 4 } }, h(window.VolumePanel, { candles: candles, height: 62 })),
+            h("div", { style: { borderTop: "1px solid var(--line-2)", paddingTop: 4 } }, h(window.RSIPanel, { rsi: rsi, height: 78 })),
+            h("div", { style: { borderTop: "1px solid var(--line-2)", paddingTop: 4 } }, h(window.MACDPanel, { data: macd, height: 80 })));
     return h("div", { className: "grid screen", style: { gap: 18 } },
       h("div", { className: "card card-pad" },
         h("div", { style: { display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 16 } },
           h("div", null, h("div", { className: "eyebrow", style: { marginBottom: 6 } }, "Verdict Agregat"),
             h("div", { className: "verdict " + vClass }, h(Ic, { name: R.verdict === "BEARISH" ? "trendingDown" : "trendingUp", size: 17 }), R.verdict)),
-          h("div", { style: { color: "var(--ink-2)", fontSize: 13, maxWidth: 360, lineHeight: 1.5 } },
-            "Sinyal teknikal tercampur — tren panjang positif (Golden Cross) namun harga di bawah SMA50 jangka pendek.")),
+          h("div", { style: { color: "var(--ink-2)", fontSize: 13, maxWidth: 360, lineHeight: 1.5 } }, narrative)),
         h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 } },
-          R.signals.map(function (sig, i) {
+          sigs.map(function (sig, i) {
             var ic = sig.state === "pos" ? "trendingUp" : (sig.state === "neg" ? "trendingDown" : "minus");
             return h("div", { className: "signal", key: i },
               h("div", { className: "signal-ic " + sig.state }, h(Ic, { name: ic, size: 17 })),
@@ -437,13 +417,7 @@
           h("div", { className: "spacer" }),
           h("div", { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
             leg("#4F66E8", "SMA 20"), leg("#E8A93C", "SMA 50"), leg("rgba(79,102,232,0.45)", "Bollinger"))),
-        h("div", { className: "card-pad", style: { paddingTop: 12 } },
-          h(window.CandleChart, { candles: candles, height: 290, bands: boll, overlays: [
-            { values: SM.sma(closes, 20), color: "#4F66E8", width: 1.5 }, { values: SM.sma(closes, 50), color: "#E8A93C", width: 1.5 }
-          ] }),
-          h("div", { style: { borderTop: "1px solid var(--line-2)", marginTop: 6, paddingTop: 4 } }, h(window.VolumePanel, { candles: candles, height: 62 })),
-          h("div", { style: { borderTop: "1px solid var(--line-2)", paddingTop: 4 } }, h(window.RSIPanel, { rsi: rsi, height: 78 })),
-          h("div", { style: { borderTop: "1px solid var(--line-2)", paddingTop: 4 } }, h(window.MACDPanel, { data: macd, height: 80 })))));
+        h("div", { className: "card-pad", style: { paddingTop: 12 } }, chartBody)));
   }
 
   /* ===================== Berita tab ===================== */

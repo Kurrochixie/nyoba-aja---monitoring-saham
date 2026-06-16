@@ -22,11 +22,12 @@ def build_positions() -> tuple[list[dict], dict]:
         if t["type"] == "BUY":
             b["cost"] += shares * price + fee
             b["shares"] += shares
-        else:  # SELL
+        else:  # SELL — clamp agar tak oversell (shares/cost negatif merusak P/L)
+            sell = min(shares, b["shares"]) if b["shares"] > 0 else 0.0
             avg = b["cost"] / b["shares"] if b["shares"] > 0 else 0.0
-            b["realized"] += shares * price - avg * shares - fee
-            b["cost"] -= avg * shares
-            b["shares"] -= shares
+            b["realized"] += sell * price - avg * sell - fee
+            b["cost"] = max(0.0, b["cost"] - avg * sell)
+            b["shares"] = max(0.0, b["shares"] - sell)
 
     positions, tot = [], {
         "cost": 0.0, "market": 0.0, "unrealized": 0.0, "realized": 0.0,

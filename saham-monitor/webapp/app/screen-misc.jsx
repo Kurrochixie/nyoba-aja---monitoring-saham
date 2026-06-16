@@ -279,6 +279,31 @@
     var ns = React.useState(""); var newCode = ns[0], setNewCode = ns[1];
     function addW() { var c = newCode.toUpperCase().trim(); if (c && wl.indexOf(c) < 0) { window.SM_API.addWatch(c); setNewCode(""); props.toast({ kind: "pos", title: "Ditambahkan", sub: c + " masuk watchlist" }); } }
     function delW(c) { window.SM_API.delWatch(c); }
+
+    /* Kelola API key — disimpan NYATA ke server (kv lokal di app.db). */
+    var ks = React.useState({ GOAPI_KEY: "", SECTORS_KEY: "", TG_TOKEN: "", TG_CHAT_ID: "" });
+    var keys = ks[0], setKeys = ks[1];
+    var sst = React.useState({}); var keyStatus = sst[0], setKeyStatus = sst[1];
+    var sav = React.useState(false); var saving = sav[0], setSaving = sav[1];
+    React.useEffect(function () {
+      fetch("/api/settings/keys").then(function (r) { return r.json(); }).then(function (d) { setKeyStatus(d || {}); }).catch(function () {});
+    }, []);
+    function setKey(k, v) { setKeys(function (cur) { var o = Object.assign({}, cur); o[k] = v; return o; }); }
+    function saveKeys() {
+      var body = {};
+      ["GOAPI_KEY", "SECTORS_KEY", "TG_TOKEN", "TG_CHAT_ID"].forEach(function (k) { if (keys[k] && keys[k].trim()) body[k] = keys[k].trim(); });
+      if (!Object.keys(body).length) { props.toast({ kind: "info", title: "Tidak ada perubahan", sub: "Isi minimal satu field untuk menyimpan." }); return; }
+      setSaving(true);
+      fetch("/api/settings/keys", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          setSaving(false); setKeyStatus(d.status || {});
+          setKeys({ GOAPI_KEY: "", SECTORS_KEY: "", TG_TOKEN: "", TG_CHAT_ID: "" });
+          props.toast({ kind: "pos", title: "Kredensial tersimpan", sub: "Feed: " + (d.feed === "realtime" ? "realtime aktif" : "delayed") });
+          if (window.SM_reload) window.SM_reload();
+        })
+        .catch(function () { setSaving(false); props.toast({ kind: "neg", title: "Gagal menyimpan", sub: "Periksa koneksi, coba lagi." }); });
+    }
     return h("div", { className: "screen two-eq", style: { alignItems: "start" } },
       h("div", { className: "grid", style: { gap: 18 } },
         h("div", { className: "card" },
@@ -300,27 +325,30 @@
             infoCell("Status Data", "Delayed ~15–20 mnt"), infoCell("Mata Uang", "Rupiah (IDR)"),
             infoCell("Satuan Lot", "1 lot = 100 lembar"), infoCell("Fee Default", "0,15% / transaksi")))),
       h("div", { className: "card" },
-        h("div", { className: "card-head" }, h(Ic, { name: "key", size: 18 }), h("div", null, h("div", { className: "ttl" }, "Koneksi Data & Notifikasi"), h("div", { className: "sub" }, "Field rahasia — disimpan terenkripsi"))),
+        h("div", { className: "card-head" }, h(Ic, { name: "key", size: 18 }), h("div", null, h("div", { className: "ttl" }, "Koneksi Data & Notifikasi"), h("div", { className: "sub" }, "Disimpan lokal di perangkat ini (data/app.db)"))),
         h("div", { className: "card-pad", style: { display: "flex", flexDirection: "column", gap: 15 } },
-          secretField("API Key Harga Realtime", "sk_live_••••••••••••4f2a", "plug"),
-          secretField("API Key Fundamental", "fd_••••••••••••9c10", "barChart"),
-          secretField("Telegram Bot Token", "78••••••:AAH••••••••", "send"),
-          secretField("Telegram Chat ID", "−100••••••3271", "send"),
+          secretField("API Key Harga Realtime (GOAPI)", "GOAPI_KEY", "plug", keys, setKey, keyStatus),
+          secretField("API Key Fundamental (Sectors)", "SECTORS_KEY", "barChart", keys, setKey, keyStatus),
+          secretField("Telegram Bot Token", "TG_TOKEN", "send", keys, setKey, keyStatus),
+          secretField("Telegram Chat ID", "TG_CHAT_ID", "send", keys, setKey, keyStatus),
           h("div", { style: { display: "flex", gap: 10, marginTop: 4 } },
-            h("button", { className: "btn btn-primary", onClick: function () { props.toast({ kind: "pos", title: "Tersimpan", sub: "Kredensial diperbarui" }); } }, h(Ic, { name: "check", size: 16 }), "Simpan"),
-            h("button", { className: "btn btn-secondary", onClick: function () { props.toast({ kind: "info", title: "Uji koneksi", sub: "Menghubungkan ke penyedia data…" }); } }, h(Ic, { name: "wifi", size: 16 }), "Uji Koneksi")),
+            h("button", { className: "btn btn-primary", disabled: saving, onClick: saveKeys }, h(Ic, { name: "check", size: 16 }), saving ? "Menyimpan…" : "Simpan"),
+            h("button", { className: "btn btn-secondary", onClick: function () { props.toast({ kind: "info", title: "Mengecek koneksi…", sub: "Menyegarkan status feed" }); if (window.SM_reload) window.SM_reload(); } }, h(Ic, { name: "wifi", size: 16 }), "Uji Koneksi")),
           h("div", { style: { display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 13px", background: "var(--accent-soft)", borderRadius: 11, fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 } },
             h(Ic, { name: "shield", size: 15, style: { color: "var(--accent)", flexShrink: 0, marginTop: 1 } }),
-            "Kredensial tidak pernah dikirim ke pihak lain dan hanya dipakai aplikasi untuk menarik data atas namamu.")))
+            "Key disimpan lokal (plaintext) di data/app.db pada perangkatmu, hanya dipakai aplikasi untuk menarik data. Field yang sudah terisi ditandai centang — isi ulang untuk mengganti.")))
     );
   }
 
-  function secretField(label, val, ic) {
+  function secretField(label, name, ic, keys, setKey, status) {
+    var isSet = !!(status && status[name]);
     return h("div", { className: "field" }, h("label", null, label),
       h("div", { style: { position: "relative" } },
-        h("input", { className: "input mono", defaultValue: val, type: "text", style: { paddingLeft: 40, paddingRight: 40 } }),
+        h("input", { className: "input mono", type: "password", autoComplete: "off", value: keys[name],
+          placeholder: isSet ? "Tersimpan — isi untuk mengganti" : "Belum diisi",
+          onChange: function (e) { setKey(name, e.target.value); }, style: { paddingLeft: 40, paddingRight: 40 } }),
         h("span", { style: { position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)" } }, h(Ic, { name: ic, size: 16 })),
-        h("span", { style: { position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: "var(--ink-3)" } }, h(Ic, { name: "eye", size: 16 }))));
+        isSet ? h("span", { style: { position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: "var(--up-text)" } }, h(Ic, { name: "check", size: 16 })) : null));
   }
   function infoCell(l, v) { return h("div", { className: "metric-cell" }, h("div", { className: "m-lbl" }, l), h("div", { style: { fontWeight: 700, fontSize: 14, marginTop: 3 } }, v)); }
   function fld(label, control) { return h("div", { className: "field" }, h("label", null, label), control); }

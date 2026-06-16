@@ -163,9 +163,20 @@
     ANTM: "antam--big.svg", ASII: "astra-international--big.svg", BBCA: "bank-central-asia--big.svg",
     BBRI: "bank-rakyat-indonesia--big.svg", BMRI: "bank-mandiri--big.svg"
   };
+  /* Volume numerik dari string terformat ("155,9 Jt", "1,2 rb", "1,3 M") untuk sorting. */
+  function parseVol(str) {
+    if (typeof str !== "string") return 0;
+    var m = /([\d.,]+)\s*(rb|jt|m|t)?/i.exec(str);
+    if (!m) return 0;
+    var n = parseFloat(m[1].replace(/\./g, "").replace(",", "."));
+    var u = (m[2] || "").toLowerCase();
+    var mult = u === "rb" ? 1e3 : (u === "jt" ? 1e6 : (u === "m" ? 1e9 : (u === "t" ? 1e12 : 1)));
+    return (n || 0) * mult;
+  }
   STOCKS.forEach(function (s) {
     s.domain = DOMAINS[s.code] || null;
     s.logo = TVLOGO[s.code] ? ("https://s3-symbol-logo.tradingview.com/" + TVLOGO[s.code]) : null;
+    if (s.volume == null) s.volume = parseVol(s.vol);
   });
   function getStock(code) { return STOCKS.filter(function (s) { return s.code === code; })[0]; }
 
@@ -248,7 +259,7 @@
     { name: "Communications", chg: 1.8 }, { name: "Healthcare", chg: -0.6 }
   ];
 
-  var MARKET = { status: "open", clock: "10:18 WIB", feed: "delayed", feedDelay: 15, advancers: 312, decliners: 118, unchanged: 64 };
+  var MARKET = { status: "open", clock: "10:18 WIB", feed: "delayed", feedDelay: 15, advancers: 7, decliners: 4, unchanged: 1 };
 
   /* ---------- Export ---------- */
   window.SM = {

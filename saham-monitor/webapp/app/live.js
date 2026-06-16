@@ -28,6 +28,21 @@
       .catch(function () {});
   };
 
+  /* Refresh RINGAN: hanya daftar watchlist (quote) — cepat, untuk update instan
+     setelah tambah/hapus saham, tanpa menunggu bootstrap penuh (riset/berita). */
+  window.SM_reload_stocks = function () {
+    return fetch("/api/stocks")
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.STOCKS && window.SM) {
+          window.SM.STOCKS.length = 0;
+          d.STOCKS.forEach(function (x) { window.SM.STOCKS.push(x); });
+          if (window.__SM_FORCE) window.__SM_FORCE();
+        }
+      })
+      .catch(function () {});
+  };
+
   function req(url, method, body) {
     return fetch(url, {
       method: method || "POST",
@@ -41,8 +56,8 @@
 
   // Setiap aksi: POST ke API → reload data live → re-render (route terjaga).
   window.SM_API = {
-    addWatch: function (symbol) { return req("/api/watchlist", "POST", { symbol: symbol }).then(window.SM_reload); },
-    delWatch: function (symbol) { return req("/api/watchlist/" + encodeURIComponent(symbol), "DELETE").then(window.SM_reload); },
+    addWatch: function (symbol) { return req("/api/watchlist", "POST", { symbol: symbol }).then(function () { if (window.SM_reload) window.SM_reload(); return window.SM_reload_stocks(); }); },
+    delWatch: function (symbol) { return req("/api/watchlist/" + encodeURIComponent(symbol), "DELETE").then(function () { if (window.SM_reload) window.SM_reload(); return window.SM_reload_stocks(); }); },
     addTxn: function (t) { return req("/api/transactions", "POST", t).then(window.SM_reload); },
     delTxn: function (id) { return req("/api/transactions/" + id, "DELETE").then(window.SM_reload); },
     addRule: function (r) { return req("/api/rules", "POST", r).then(window.SM_reload); },

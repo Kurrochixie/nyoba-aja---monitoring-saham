@@ -45,6 +45,9 @@ FinceptTerminal/
 *.tar.gz
 *.zip
 
+# --- Dokumen kerja internal (jangan publik) ---
+_AUDIT_REPORT.md
+
 # --- Tooling lokal / OS ---
 .claude/
 .idea/

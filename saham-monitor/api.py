@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import logging
+import math
 import os
 import re
 import sys
@@ -22,7 +23,7 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 from fastapi import FastAPI                       # noqa: E402
 from fastapi.responses import JSONResponse        # noqa: E402
 from fastapi.staticfiles import StaticFiles       # noqa: E402
-from pydantic import BaseModel                    # noqa: E402
+from pydantic import BaseModel, Field, field_validator  # noqa: E402
 from apscheduler.schedulers.background import BackgroundScheduler  # noqa: E402
 
 import config                                      # noqa: E402
@@ -79,7 +80,19 @@ def _spark(symbol, period):
     df, _ = ms.get_history(symbol, period=period)
     if df is None or df.empty:
         return []
-    return [round(float(x), 2) for x in df["Close"].tolist()]
+    # buang NaN (hari libur/gap) — NaN merusak JSON & sparkline (x != x untuk NaN)
+    return [round(float(x), 2) for x in df["Close"].tolist() if x == x]
+
+
+def _jsonable(o):
+    """Sanitasi rekursif: NaN/Inf → None agar JSON tidak gagal (allow_nan=False)."""
+    if isinstance(o, float):
+        return o if math.isfinite(o) else None
+    if isinstance(o, dict):
+        return {k: _jsonable(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_jsonable(v) for v in o]
+    return o
 
 
 def build_ihsg():
@@ -104,7 +117,10 @@ def _stock(sym):
         "code": code, "name": ms.get_name(sym) if False else utils.display_name(sym),
         "sector": SECTOR_MAP.get(code, ""),
         "price": round(q.price, 2), "chg": round(q.change, 2), "chgPct": round(q.change_pct, 2),
+        "high": round(q.day_high, 2) if q.day_high else None,
+        "low": round(q.day_low, 2) if q.day_low else None,
         "vol": fmt_vol(q.volume),
+        "volume": int(q.volume) if (q.volume is not None and q.volume == q.volume) else 0,
         "color": COLOR_MAP.get(code, "#3B6FB0"),
         "prevClose": round(q.previous_close, 2),
         "spark": _spark(sym, "1mo")[-30:],
@@ -120,13 +136,19 @@ def build_stocks(symbols):
     return [r for r in res if r]
 
 
-def build_market():
+def build_market(stocks=None):
     is_open = utils.is_market_open()
+    stocks = stocks or []
+    adv = sum(1 for s in stocks if (s.get("chgPct") or 0) > 0)
+    dec = sum(1 for s in stocks if (s.get("chgPct") or 0) < 0)
+    unch = max(0, len(stocks) - adv - dec)
     return {
         "status": "open" if is_open else "closed",
         "clock": f"{utils.now_wib():%H:%M} WIB",
         "feed": "realtime" if ms.is_realtime() else "delayed",
         "feedDelay": 15,
+        # Breadth dari WATCHLIST (bukan seluruh IDX) — jujur soal sumbernya.
+        "advancers": adv, "decliners": dec, "unchanged": unch, "breadthScope": "watchlist",
     }
 
 
@@ -290,8 +312,37 @@ def build_research_one(sym):
                 except Exception:
                     pass
                 rsi_state = s["verdict"]
+    # Konsensus analis & ringkasan keuangan NYATA dari yfinance (.info di f.raw); None bila tak ada.
+    raw = (f.raw if (f and getattr(f, "raw", None)) else {}) or {}
+    consensus = None
+    _tgt = raw.get("targetMeanPrice")
+    if _tgt:
+        _rec = (raw.get("recommendationKey") or "").replace("_", " ").strip().title()
+        _na = raw.get("numberOfAnalystOpinions")
+        consensus = {
+            "targetLow": round(raw.get("targetLowPrice") or _tgt),
+            "targetAvg": round(_tgt),
+            "targetHigh": round(raw.get("targetHighPrice") or _tgt),
+            "upside": round((_tgt - q.price) / q.price * 100, 1) if q.price else 0,
+            "recommendation": _rec or None,
+            "analysts": int(_na) if _na else None,
+        }
+    financials = None
+    _rev, _ni = raw.get("totalRevenue"), raw.get("netIncomeToCommon")
+    if _rev or _ni:
+        def _pg(k):
+            v = raw.get(k)
+            return round(v * 100, 1) if isinstance(v, (int, float)) else None
+        financials = {
+            "revenue": _compact(_rev) if _rev else "—",
+            "netIncome": _compact(_ni) if _ni else "—",
+            "revenueGrowth": _pg("revenueGrowth"), "earningsGrowth": _pg("earningsGrowth"),
+            "grossMargin": _pg("grossMargins"), "profitMargin": _pg("profitMargins"),
+            "period": "TTM (tahunan)",
+        }
     return {
         "code": code, "name": ms.get_name(sym),
+        "consensus": consensus, "financials": financials,
         "sector": (f.sector if f and f.sector else SECTOR_MAP.get(code, "")),
         "industry": (f.industry if f and f.industry else ""),
         "price": round(q.price, 2), "chg": round(q.change, 2), "chgPct": round(q.change_pct, 2),
@@ -431,7 +482,7 @@ def news_stream():
 
 
 class KeywordIn(BaseModel):
-    keyword: str
+    keyword: str = Field(min_length=1, max_length=40)
 
 
 @app.post("/api/news-keywords")
@@ -450,20 +501,43 @@ def del_news_kw(keyword: str):
     return {"ok": True, "keywords": storage.get_news_keywords()}
 
 
+_ID_MON = ["", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+
+
+def _candle_label(ts, mode):
+    """Label tanggal candle (Bahasa Indonesia). mode: intra / long / day."""
+    m = _ID_MON[ts.month] if 1 <= ts.month <= 12 else "?"
+    if mode == "intra":
+        return f"{ts.day} {m} {ts:%H:%M}", f"{ts:%H:%M}"
+    if mode == "long":
+        return f"{ts.day} {m} {ts.year}", f"{m} '{str(ts.year)[2:]}"
+    return f"{ts.day} {m} {ts.year}", f"{ts.day} {m}"
+
+
 @app.get("/api/candles")
 def candles(code: str, range: str = "1H"):
-    """Candle INTRADAY nyata untuk chart Bawaan. range: 1H (1d/5m) atau 5H (5d/15m)."""
-    pi = config.INTRADAY.get(range)
-    if not pi:
-        return {"ok": False, "candles": [], "dates": []}
-    period, interval = pi
+    """Candle NYATA untuk chart Bawaan.
+    range intraday: 1H (1d/5m), 5H (5d/15m). range harian: 1B/3B/6B/1T/3T/5T (yfinance)."""
     sym = utils.normalize_symbol(code)
-    try:
-        df, _ = ms.get_intraday(sym, period=period, interval=interval)
-    except Exception:
-        df = None
+    intraday = range in config.INTRADAY
+    interval = "1d"
+    df = None
+    if intraday:
+        period, interval = config.INTRADAY[range]
+        try:
+            df, _ = ms.get_intraday(sym, period=period, interval=interval)
+        except Exception:
+            df = None
+    elif range in config.PERIODS:
+        try:
+            df, _ = ms.get_history(sym, period=config.PERIODS[range])
+        except Exception:
+            df = None
+    else:
+        return {"ok": False, "candles": [], "dates": []}
     if df is None or df.empty:
         return {"ok": False, "candles": [], "dates": []}
+    mode = "intra" if intraday else ("long" if range in ("3T", "5T") else "day")
     out_c, out_d = [], []
     for ts, row in df.iterrows():
         try:
@@ -476,7 +550,8 @@ def candles(code: str, range: str = "1H"):
         v = int(vol) if vol == vol else 0
         out_c.append({"o": round(o, 2), "h": round(h_, 2), "l": round(lo, 2), "c": round(c, 2), "v": v})
         try:
-            out_d.append({"full": ts.strftime("%d %b %H:%M"), "axis": ts.strftime("%H:%M")})
+            full, axis = _candle_label(ts, mode)
+            out_d.append({"full": full, "axis": axis})
         except Exception:
             out_d.append({"full": "", "axis": ""})
     return {"ok": bool(out_c), "candles": out_c, "dates": out_d, "interval": interval}
@@ -512,7 +587,7 @@ def bootstrap():
                 out["SECTORS"] = sectors
     except Exception as e:  # noqa: BLE001
         logging.error("stocks: %s", e)
-    out["MARKET"] = build_market()
+    out["MARKET"] = build_market(out.get("STOCKS"))
     news = build_news()
     if news:
         out["NEWS"] = news
@@ -544,7 +619,7 @@ def bootstrap():
             out["_fired"] = [f["detail"] for f in fired]
     except Exception as e:  # noqa: BLE001
         logging.error("alert eval: %s", e)
-    return JSONResponse(out)
+    return JSONResponse(_jsonable(out))
 
 
 _OPMAP = {"≥": ">=", "≤": "<=", "＞": ">", "＜": "<", ">": ">", "<": "<", ">=": ">=", "<=": "<="}
@@ -566,26 +641,69 @@ def _iso_date(s):
         return str(s)
 
 
+_SYM_RE = r"[A-Z0-9.^-]{1,15}"
+
+
+def _clean_symbol(v):
+    v = str(v or "").strip().upper()
+    if not re.fullmatch(_SYM_RE, v):
+        raise ValueError("kode/simbol tidak valid")
+    return v
+
+
 class WatchIn(BaseModel):
-    symbol: str
+    symbol: str = Field(min_length=1, max_length=15)
+
+    @field_validator("symbol")
+    @classmethod
+    def _v_sym(cls, v):
+        return _clean_symbol(v)
 
 
 class TxnIn(BaseModel):
     date: str
-    code: str
+    code: str = Field(min_length=1, max_length=15)
     type: str
-    lot: int
-    price: float
-    fee: float = 0
+    lot: int = Field(gt=0, le=1_000_000)
+    price: float = Field(gt=0)
+    fee: float = Field(default=0, ge=0)
+
+    @field_validator("code")
+    @classmethod
+    def _v_code(cls, v):
+        return _clean_symbol(v)
+
+    @field_validator("type")
+    @classmethod
+    def _v_type(cls, v):
+        v = str(v or "").strip().upper()
+        if v not in ("BUY", "SELL"):
+            raise ValueError("type harus BUY atau SELL")
+        return v
 
 
 class RuleIn(BaseModel):
-    symbol: str
+    symbol: str = Field(min_length=1, max_length=15)
     metric: str
     op: str
     value: str
-    cooldown: int = 30
+    cooldown: int = Field(default=30, ge=0, le=10080)
     channels: list[str] = ["in-app"]
+
+    @field_validator("symbol")
+    @classmethod
+    def _v_sym(cls, v):
+        return _clean_symbol(v)
+
+    @field_validator("value")
+    @classmethod
+    def _v_value(cls, v):
+        s = str(v).replace(".", "").replace(",", ".").replace("−", "-").replace("–", "-")
+        try:
+            float(s)
+        except (TypeError, ValueError):
+            raise ValueError("nilai ambang harus angka")
+        return v
 
 
 class ToggleIn(BaseModel):
@@ -604,6 +722,48 @@ def del_watch(symbol: str):
     import storage
     storage.remove_from_watchlist(utils.normalize_symbol(symbol))
     return {"ok": True}
+
+
+@app.get("/api/stocks")
+def stocks_only():
+    """Daftar watchlist (quote saja) — ringan & cepat untuk refresh instan setelah tambah/hapus."""
+    import storage
+    return JSONResponse(_jsonable({"STOCKS": build_stocks(storage.get_watchlist())}))
+
+
+_KEY_FIELDS = ("GOAPI_KEY", "SECTORS_KEY", "TG_TOKEN", "TG_CHAT_ID")
+
+
+class KeysIn(BaseModel):
+    GOAPI_KEY: str | None = None
+    SECTORS_KEY: str | None = None
+    TG_TOKEN: str | None = None
+    TG_CHAT_ID: str | None = None
+
+
+def _keys_status():
+    import storage
+    return {k: bool((storage.kv_get(k) or "").strip()) for k in _KEY_FIELDS}
+
+
+@app.get("/api/settings/keys")
+def get_keys():
+    """Status key (terisi/tidak) — nilai TIDAK pernah dikembalikan ke klien."""
+    return _keys_status()
+
+
+@app.post("/api/settings/keys")
+def save_keys(b: KeysIn):
+    """Simpan API key ke SQLite kv (lokal). Field kosong dibiarkan apa adanya."""
+    import storage
+    saved = []
+    for k in _KEY_FIELDS:
+        v = getattr(b, k, None)
+        if v and str(v).strip():
+            storage.kv_set(k, str(v).strip())
+            saved.append(k)
+    return {"ok": True, "saved": saved, "status": _keys_status(),
+            "feed": "realtime" if ms.is_realtime() else "delayed"}
 
 
 @app.post("/api/transactions")

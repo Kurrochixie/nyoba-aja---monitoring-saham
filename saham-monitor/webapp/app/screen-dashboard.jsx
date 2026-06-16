@@ -29,13 +29,22 @@
       return (av - bv) * sort.dir;
     });
 
-    var pcfg = PERIODS.filter(function (p) { return p.id === period; })[0];
-    var candles = React.useMemo(function () {
-      return SM.genCandles(sel.seed * 7 + pcfg.n, pcfg.n, sel.price, pcfg.v);
+    /* Candle harian NYATA dari API (sesuai periode terpilih). */
+    var cd = React.useState(null); var fetched = cd[0], setFetched = cd[1];
+    React.useEffect(function () {
+      var alive = true; setFetched({ loading: true });
+      fetch("/api/candles?code=" + encodeURIComponent(sel.code) + "&range=" + period)
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (alive) setFetched(d && d.ok && d.candles && d.candles.length ? d : { empty: true }); })
+        .catch(function () { if (alive) setFetched({ empty: true }); });
+      return function () { alive = false; };
     }, [sel.code, period]);
+    var candles = (fetched && fetched.candles) || [];
+    var dates = (fetched && fetched.dates) || [];
     var closes = candles.map(function (c) { return c.c; });
     var sma20 = SM.sma(closes, 20), sma50 = SM.sma(closes, 50);
-    var dates = React.useMemo(function () { return SM.genDates(candles.length, "Harian"); }, [sel.code, period]);
+    var chLoading = !!(fetched && fetched.loading);
+    var chEmpty = !chLoading && !candles.length;
 
     function th(label, key, align) {
       var active = sort.key === key;
@@ -43,7 +52,7 @@
         label, h("span", { className: "sort-ic" }, h(Ic, { name: active ? (sort.dir === 1 ? "chevronUp" : "chevronDown") : "chevronDown", size: 13, style: { opacity: active ? 1 : 0.4 } })));
     }
 
-    var breadth = SM.MARKET; var bTot = breadth.advancers + breadth.decliners + breadth.unchanged;
+    var breadth = SM.MARKET; var bN = breadth.advancers + breadth.decliners + breadth.unchanged; var bTot = bN || 1;
 
     return h("div", { className: "screen" },
       /* KPI row */
@@ -68,7 +77,7 @@
                 th("Terakhir", "price", "r"),
                 th("Δ", "chg", "r"),
                 th("Δ%", "chgPct", "r"),
-                th("Volume", "code", "r"))),
+                th("Volume", "volume", "r"))),
               h("tbody", null, rows.map(function (s) {
                 var d = s.chgPct > 0 ? "up" : (s.chgPct < 0 ? "down" : "flat");
                 return h("tr", { key: s.code, className: s.code === selCode ? "selected" : "", title: "Buka riset " + s.code, onClick: function () { props.onOpenRiset(s.code); } },
@@ -94,7 +103,7 @@
               breadthStat("Naik", breadth.advancers, "var(--up-text)"),
               breadthStat("Tetap", breadth.unchanged, "var(--ink-2)"),
               breadthStat("Turun", breadth.decliners, "var(--down-text)")),
-            srcNote("Sumber: ringkasan perdagangan IDX · delayed " + breadth.feedDelay + "m")),
+            srcNote("Sumber: watchlist (" + bN + " instrumen) · " + (breadth.feed === "realtime" ? "realtime" : "delayed " + breadth.feedDelay + "m"))),
           h("div", { className: "card card-pad" },
             h("div", { className: "section-title", style: { marginBottom: 14 } }, h(Ic, { name: "barChart", size: 17 }), "Performa Sektor"),
             h("div", { className: "sector-grid" },
@@ -133,18 +142,22 @@
           h("div", { style: { display: "flex", alignItems: "baseline", gap: 14, marginBottom: 6 } },
             h("div", { className: "num", style: { fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em" } }, SM.fmt(sel.price)),
             h("div", { style: { display: "flex", gap: 18, marginLeft: "auto", flexWrap: "wrap" } },
-              miniMetric("Tertinggi", SM.fmt(Math.round(sel.price * 1.012)), "up"),
-              miniMetric("Terendah", SM.fmt(Math.round(sel.price * 0.984)), "down"),
+              miniMetric("Tertinggi", SM.fmt(sel.high != null ? sel.high : Math.round(sel.price * 1.012)), "up"),
+              miniMetric("Terendah", SM.fmt(sel.low != null ? sel.low : Math.round(sel.price * 0.984)), "down"),
               miniMetric("Volume", sel.vol),
               miniMetric("Prev", SM.fmt(sel.prevClose)))),
           chartMode === "builtin"
-            ? h(React.Fragment, null,
-                h("div", { style: { display: "flex", gap: 14, marginBottom: 4, alignItems: "center" } },
-                  legendSwatch("#4F66E8", "SMA 20"), legendSwatch("#E8A93C", "SMA 50")),
-                h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: [
-                  { values: sma20, color: "#4F66E8", width: 1.6 }, { values: sma50, color: "#E8A93C", width: 1.6 }
-                ] }),
-                h(window.VolumePanel, { candles: candles, height: 64 }))
+            ? (chLoading
+                ? h("div", { style: { height: 300, display: "grid", placeItems: "center", color: "var(--ink-3)", fontSize: 13 } }, "Memuat data harga…")
+                : chEmpty
+                  ? h("div", { style: { height: 300, display: "grid", placeItems: "center", textAlign: "center", padding: 24, border: "1px dashed var(--line)", borderRadius: 12, color: "var(--ink-3)", fontSize: 13 } }, "Data harga belum tersedia. Coba lagi sebentar.")
+                  : h(React.Fragment, null,
+                      h("div", { style: { display: "flex", gap: 14, marginBottom: 4, alignItems: "center" } },
+                        legendSwatch("#4F66E8", "SMA 20"), legendSwatch("#E8A93C", "SMA 50")),
+                      h(window.CandleChart, { candles: candles, dates: dates, height: 300, overlays: [
+                        { values: sma20, color: "#4F66E8", width: 1.6 }, { values: sma50, color: "#E8A93C", width: 1.6 }
+                      ] }),
+                      h(window.VolumePanel, { candles: candles, height: 64 })))
             : h(window.TVChart, { code: sel.code, height: 440 })))
     );
   }
