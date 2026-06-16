@@ -24,6 +24,24 @@
     styleguide: { title: "Style Guide", sub: "Token desain & komponen Saham Monitor", search: false }
   };
 
+  /* Error Boundary: cegah satu error render menghapus seluruh app (layar putih). */
+  class ErrorBoundary extends React.Component {
+    constructor(props) { super(props); this.state = { err: null }; }
+    static getDerivedStateFromError(err) { return { err: err }; }
+    componentDidCatch(err) { try { console.error("UI error:", err); } catch (e) {} }
+    render() {
+      if (this.state.err) {
+        var self = this;
+        return h("div", { style: { padding: "48px 20px", textAlign: "center", color: "var(--ink-2)" } },
+          h("div", { style: { fontSize: 17, fontWeight: 800, color: "var(--ink)", marginBottom: 8 } }, "Terjadi kesalahan di tampilan"),
+          h("div", { style: { fontSize: 13, color: "var(--ink-3)", marginBottom: 18, maxWidth: 420, marginLeft: "auto", marginRight: "auto", lineHeight: 1.5 } },
+            "Bagian ini gagal dimuat. Coba muat ulang halaman; data kamu aman."),
+          h("button", { className: "btn btn-primary", onClick: function () { self.setState({ err: null }); if (window.SM_reload) window.SM_reload(); } }, h(Ic, { name: "refresh", size: 16 }), "Muat ulang data"));
+      }
+      return this.props.children;
+    }
+  }
+
   function App() {
     var tw = window.useTweaks(TWEAK_DEFAULTS); var t = tw[0], setTweak = tw[1];
     var rs = React.useState("dashboard"); var route = rs[0], setRoute = rs[1];
@@ -104,7 +122,7 @@
         t.ticker && h(window.Ticker, null),
         h("div", { className: "scroll-area" },
           h(window.Header, { title: meta.title, sub: route === "dashboard" ? h(window.StatusBar, { onSettings: function () { nav("pengaturan"); } }) : meta.sub, right: rightActions }),
-          h("div", { className: "content" }, screen))),
+          h("div", { className: "content" }, h(ErrorBoundary, { key: route }, screen)))),
       h(window.ToastHost, { toasts: toasts, onClose: closeToast }),
       addOpen ? h(window.AddWatchModal, {
         onClose: function () { setAddOpen(false); },

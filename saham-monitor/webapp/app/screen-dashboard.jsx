@@ -13,13 +13,13 @@
 
   function Dashboard(props) {
     var selCode = props.selected || "BBCA";
-    var sel = SM.getStock(selCode) || SM.STOCKS[2];
+    var sel = SM.getStock(selCode) || SM.STOCKS[0] || { code: selCode, name: selCode, sector: "", price: 0, chg: 0, chgPct: 0, prevClose: 0, vol: "—", color: "#64748B", spark: [], seed: 1, volat: 0.02 };
     var ps = React.useState("3B"); var period = ps[0], setPeriod = ps[1];
     var cm = React.useState("builtin"); var chartMode = cm[0], setChartMode = cm[1];
     var ss = React.useState({ key: "chgPct", dir: -1 }); var sort = ss[0], setSort = ss[1];
     var q = (props.search || "").toLowerCase();
 
-    var movers = [SM.getStock("ANTM"), SM.getStock("BBCA"), SM.getStock("BBRI")];
+    var movers = [SM.getStock("ANTM"), SM.getStock("BBCA"), SM.getStock("BBRI")].filter(Boolean);
 
     var rows = SM.STOCKS.filter(function (s) {
       return !q || s.code.toLowerCase().indexOf(q) >= 0 || s.name.toLowerCase().indexOf(q) >= 0;

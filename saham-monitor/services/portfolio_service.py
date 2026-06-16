@@ -97,7 +97,10 @@ def nav_series(period: str = "1y") -> pd.Series | None:
             for t in txns:
                 if t["symbol"] != s:
                     continue
-                d = pd.Timestamp(t["date"]).normalize()
+                try:  # lewati transaksi dgn tanggal rusak; jangan batalkan seluruh NAV
+                    d = pd.Timestamp(t["date"]).normalize()
+                except Exception:
+                    continue
                 pos = union.searchsorted(d)
                 if pos >= len(union):
                     continue

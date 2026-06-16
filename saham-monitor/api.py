@@ -402,7 +402,7 @@ def build_portfolio():
             for t in reversed(txns)]
     return {
         "marketValue": round(tot["market"]), "marketValueChg": round(tot["day"]),
-        "marketValueChgPct": round(tot["day"] / base * 100, 2) if base else 0,
+        "marketValueChgPct": round(tot["day"] / base * 100, 2) if base > 0 else 0,
         "totalCost": round(tot["cost"]), "unrealized": round(tot["unrealized"]),
         "unrealizedPct": round(tot["total_pl_pct"], 2), "realized": round(tot["realized"]),
         "metrics": {"totalReturn": round(mt.get("total_return", 0), 2),
@@ -458,6 +458,10 @@ async def lifespan(_app):
 
 
 app = FastAPI(title="Saham Monitor API", lifespan=lifespan)
+
+# Tolak Host header non-loopback (cegah DNS-rebinding). App ini memang hanya untuk lokal.
+from starlette.middleware.trustedhost import TrustedHostMiddleware  # noqa: E402
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
 
 @app.middleware("http")
@@ -596,10 +600,10 @@ def bootstrap():
         logging.error("stocks: %s", e)
     out["MARKET"] = build_market(out.get("STOCKS"))
     news = build_news()
-    if news:
-        out["NEWS"] = news
+    # Saat feed mati: kirim NEWS kosong-valid (jangan biarkan UI tampilkan berita mock lama).
+    out["NEWS"] = news if news else {"summary": {"total": 0, "pos": 0, "neg": 0, "neu": 0}, "items": []}
     try:
-        out.setdefault("NEWS", {})["keywords"] = _seed_keywords_if_empty()
+        out["NEWS"]["keywords"] = _seed_keywords_if_empty()
     except Exception:
         pass
     try:
@@ -686,6 +690,16 @@ class TxnIn(BaseModel):
         v = str(v or "").strip().upper()
         if v not in ("BUY", "SELL"):
             raise ValueError("type harus BUY atau SELL")
+        return v
+
+    @field_validator("date")
+    @classmethod
+    def _v_date(cls, v):
+        try:
+            import pandas as pd
+            pd.Timestamp(v)
+        except Exception:
+            raise ValueError("tanggal tidak valid")
         return v
 
 

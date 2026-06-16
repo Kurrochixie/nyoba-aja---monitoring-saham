@@ -25,8 +25,15 @@ def _quote_cached(symbol: str):
     return None
 
 
+_last_quote_source = None
+
+
 def get_quote_obj(symbol: str) -> Quote | None:
-    return _quote_cached(symbol)
+    q = _quote_cached(symbol)
+    if q is not None and getattr(q, "source", None):
+        global _last_quote_source
+        _last_quote_source = q.source
+    return q
 
 
 def get_quotes(symbols: list[str]) -> dict[str, Quote | None]:
@@ -84,7 +91,8 @@ def get_name(symbol: str) -> str:
 
 # ── Label sumber data (untuk status bar / Pengaturan) ───────────────────────
 def is_realtime() -> bool:
-    return bool(get_key("GOAPI_KEY"))
+    # realtime HANYA bila quote terakhir benar-benar dari GoAPI (bukan fallback yfinance delayed)
+    return bool(get_key("GOAPI_KEY")) and _last_quote_source == "goapi"
 
 
 def primary_source_label() -> str:
