@@ -10,11 +10,18 @@ Catatan: indeks IHSG (^JKSE) tetap via yfinance (GoAPI prices = saham saja).
 """
 from __future__ import annotations
 
+import re
+
 import requests
 
 from models.quote import Quote
 from providers.base import NETWORK, NO_DATA, Provider, ProviderResult
 from providers.keys import get_key
+
+
+def _scrub(s):
+    """Redaksi api_key dari pesan error agar tidak bocor ke log."""
+    return re.sub(r"(api_key=)[^&\s'\"]+", r"\1***", str(s))
 
 _PRICE_KEYS = ("close", "last", "last_price", "lastprice", "price", "lasttradedprice",
                "ltp", "regularmarketprice", "last_trade_price")
@@ -80,7 +87,7 @@ class GoApiProvider(Provider):
                       volume=_dig(data, ("volume",)) or 0.0,
                       currency="IDR", source=self.name), self.name)
         except Exception as e:  # noqa: BLE001
-            return ProviderResult.fail(NETWORK, str(e), self.name)
+            return ProviderResult.fail(NETWORK, _scrub(e), self.name)
 
     def get_history(self, symbol, period="1y", interval="1d") -> ProviderResult:
         return ProviderResult.fail(NO_DATA, "history via yfinance", self.name)

@@ -18,7 +18,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+logging.basicConfig(
+    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logging.getLogger("streamlit").setLevel(logging.ERROR)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from fastapi import FastAPI                       # noqa: E402
 from fastapi.responses import JSONResponse        # noqa: E402
@@ -110,7 +115,10 @@ def build_ihsg():
 
 def _stock(sym):
     code = utils.short_code(sym)
-    q = ms.get_quote_obj(sym)
+    try:
+        q = ms.get_quote_obj(sym)
+    except Exception:
+        q = None
     if not q:
         # Placeholder: tetap tampilkan emiten (data belum tersedia) — JANGAN hilangkan dari watchlist.
         return {
@@ -121,7 +129,7 @@ def _stock(sym):
             "volat": 0.02, "stale": True,
         }
     return {
-        "code": code, "name": ms.get_name(sym) if False else utils.display_name(sym),
+        "code": code, "name": utils.display_name(sym),
         "sector": SECTOR_MAP.get(code, ""),
         "price": round(q.price, 2), "chg": round(q.change, 2), "chgPct": round(q.change_pct, 2),
         "high": round(q.day_high, 2) if q.day_high else None,
@@ -831,37 +839,45 @@ def toggle_rule(rid: int, b: ToggleIn):
 _UNIVERSE = None
 
 
+def _dedup_universe(lst):
+    seen, uniq = set(), []
+    for it in sorted(lst, key=lambda x: x["code"]):
+        if it["code"] not in seen:
+            seen.add(it["code"])
+            uniq.append(it)
+    return uniq
+
+
 @app.get("/api/universe")
 def universe():
-    """Daftar emiten IDX untuk autocomplete (GoAPI /companies bila kuota ada, else KNOWN_NAMES)."""
+    """Daftar emiten IDX untuk autocomplete. Cache HANYA hasil GoAPI sukses;
+    fallback KNOWN_NAMES TIDAK di-cache (supaya retry GoAPI saat kuota pulih)."""
     global _UNIVERSE
-    if _UNIVERSE is None:
-        items, key = [], get_key("GOAPI_KEY")
-        if key:
-            try:
-                import requests
-                r = requests.get("https://api.goapi.io/stock/idx/companies",
-                                 params={"api_key": key}, timeout=10)
-                d = r.json()
-                if isinstance(d, dict) and str(d.get("status")) == "success":
-                    for c in ((d.get("data") or {}).get("results") or []):
-                        code = c.get("symbol") or c.get("code")
-                        comp = c.get("company") if isinstance(c.get("company"), dict) else {}
-                        name = (comp.get("name") if comp else None) or c.get("name") or code
-                        if code:
-                            items.append({"code": code, "name": name})
-            except Exception:
-                pass
-        if not items:
-            items = [{"code": k.replace(".JK", ""), "name": v}
-                     for k, v in config.KNOWN_NAMES.items() if not k.startswith("^")]
-        seen, uniq = set(), []
-        for it in sorted(items, key=lambda x: x["code"]):
-            if it["code"] not in seen:
-                seen.add(it["code"])
-                uniq.append(it)
-        _UNIVERSE = uniq
-    return {"stocks": _UNIVERSE}
+    if _UNIVERSE:
+        return {"stocks": _UNIVERSE}
+    items, key = [], get_key("GOAPI_KEY")
+    if key:
+        try:
+            import requests
+            r = requests.get("https://api.goapi.io/stock/idx/companies",
+                             params={"api_key": key}, timeout=10)
+            d = r.json()
+            if isinstance(d, dict) and str(d.get("status")) == "success":
+                for c in ((d.get("data") or {}).get("results") or []):
+                    code = c.get("symbol") or c.get("code")
+                    comp = c.get("company") if isinstance(c.get("company"), dict) else {}
+                    name = (comp.get("name") if comp else None) or c.get("name") or code
+                    if code:
+                        items.append({"code": code, "name": name})
+        except Exception:
+            pass
+    if items:  # GoAPI sukses → cache permanen
+        _UNIVERSE = _dedup_universe(items)
+        return {"stocks": _UNIVERSE}
+    # fallback tanpa cache
+    fallback = [{"code": k.replace(".JK", ""), "name": v}
+                for k, v in config.KNOWN_NAMES.items() if not k.startswith("^")]
+    return {"stocks": _dedup_universe(fallback)}
 
 
 # Static React app (mount terakhir agar /api/* menang)
