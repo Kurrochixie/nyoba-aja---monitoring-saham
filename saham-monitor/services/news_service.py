@@ -7,7 +7,7 @@ from urllib.parse import quote_plus
 
 import feedparser
 import requests
-import streamlit as st
+from cache import ttl_cache
 
 import config
 
@@ -87,7 +87,7 @@ def _dedup_sort(items: list[dict]) -> list[dict]:
     return out
 
 
-@st.cache_data(ttl=config.TTL_NEWS, show_spinner=False)
+@ttl_cache(config.TTL_NEWS)
 def fetch_general(limit: int = 40) -> list[dict]:
     items = []
     for name, url in config.NEWS_FEEDS_GENERAL.items():
@@ -95,7 +95,7 @@ def fetch_general(limit: int = 40) -> list[dict]:
     return _dedup_sort(items)[:limit]
 
 
-@st.cache_data(ttl=config.TTL_NEWS, show_spinner=False)
+@ttl_cache(config.TTL_NEWS)
 def fetch_for_query(query: str, limit: int = 25) -> list[dict]:
     url = config.GOOGLE_NEWS.format(q=quote_plus(query))
     return _dedup_sort(_parse(url, "Google News"))[:limit]

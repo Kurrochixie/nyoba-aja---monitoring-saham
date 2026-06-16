@@ -5,7 +5,7 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 
-import streamlit as st
+from cache import singleton
 
 import config
 
@@ -38,7 +38,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@st.cache_resource(show_spinner=False)
+@singleton
 def get_conn() -> sqlite3.Connection:
     os.makedirs(config.DATA_DIR, exist_ok=True)
     os.makedirs(config.CACHE_DIR, exist_ok=True)

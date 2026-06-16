@@ -4,7 +4,7 @@ UI memanggil fungsi di sini, BUKAN provider/registry langsung.
 """
 from __future__ import annotations
 
-import streamlit as st
+from cache import ttl_cache
 
 import config
 import storage
@@ -14,7 +14,7 @@ from providers.keys import get_key
 
 
 # ── Quote (fallback: goapi -> ... -> yfinance) ──────────────────────────────
-@st.cache_data(ttl=config.TTL_QUOTE, show_spinner=False)
+@ttl_cache(config.TTL_QUOTE)
 def _quote_cached(symbol: str):
     for p in registry.providers():
         if not p.supports(symbol):
@@ -41,7 +41,7 @@ def get_quotes(symbols: list[str]) -> dict[str, Quote | None]:
 
 
 # ── History (harian) & intraday ─────────────────────────────────────────────
-@st.cache_data(ttl=config.TTL_HISTORY, show_spinner=False)
+@ttl_cache(config.TTL_HISTORY)
 def _history_cached(symbol: str, period: str, interval: str):
     for p in registry.providers():
         if not p.supports(symbol):
@@ -56,14 +56,14 @@ def get_history(symbol: str, period: str = "1y", interval: str = "1d"):
     return _history_cached(symbol, period, interval)
 
 
-@st.cache_data(ttl=config.TTL_INTRADAY, show_spinner=False)
+@ttl_cache(config.TTL_INTRADAY)
 def get_intraday(symbol: str, period: str = "1d", interval: str = "5m"):
     df, err = _history_cached(symbol, period, interval)
     return df, err
 
 
 # ── Fundamentals (sectors -> yfinance) ──────────────────────────────────────
-@st.cache_data(ttl=config.TTL_FUNDAMENTALS, show_spinner=False)
+@ttl_cache(config.TTL_FUNDAMENTALS)
 def get_fundamentals(symbol: str):
     for p in registry.providers():
         if not p.supports(symbol):
@@ -75,7 +75,7 @@ def get_fundamentals(symbol: str):
 
 
 # ── Nama emiten (best-effort, cache harian) ─────────────────────────────────
-@st.cache_data(ttl=config.TTL_NAME, show_spinner=False)
+@ttl_cache(config.TTL_NAME)
 def get_name(symbol: str) -> str:
     if symbol in config.KNOWN_NAMES:
         return config.KNOWN_NAMES[symbol]
