@@ -7,7 +7,7 @@
   function merge(d) {
     if (!d || !window.SM) return;
     var SM = window.SM;
-    ["IHSG", "MARKET", "NEWS", "PORTFOLIO", "ALERTS", "RESEARCH"].forEach(function (k) {
+    ["IHSG", "MARKET", "NEWS", "PORTFOLIO", "ALERTS", "RESEARCH", "PROFILE"].forEach(function (k) {
       if (d[k]) Object.assign(SM[k], d[k]);
     });
     ["STOCKS", "SECTORS"].forEach(function (k) {
@@ -64,6 +64,12 @@
     delRule: function (id) { return req("/api/rules/" + id, "DELETE").then(window.SM_reload); },
     toggleRule: function (id, active) { return req("/api/rules/" + id + "/toggle", "POST", { active: active }).then(window.SM_reload); },
     addNewsKeyword: function (kw) { return req("/api/news-keywords", "POST", { keyword: kw }).then(window.SM_reload); },
-    delNewsKeyword: function (kw) { return req("/api/news-keywords/" + encodeURIComponent(kw), "DELETE").then(window.SM_reload); }
+    delNewsKeyword: function (kw) { return req("/api/news-keywords/" + encodeURIComponent(kw), "DELETE").then(window.SM_reload); },
+    saveProfile: function (p) {
+      return req("/api/profile", "POST", p).then(function (d) {
+        if (d && d.profile && window.SM) { Object.assign(window.SM.PROFILE, d.profile); if (window.__SM_FORCE) window.__SM_FORCE(); }
+        return d;
+      });
+    }
   };
 })();

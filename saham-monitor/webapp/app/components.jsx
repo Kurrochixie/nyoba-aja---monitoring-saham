@@ -40,6 +40,13 @@
     }
     return h("div", { className: "stock-badge", style: { width: sz, height: sz, fontSize: sz * 0.34, background: "linear-gradient(135deg, " + color + ", " + shade(color, -18) + ")" } }, code.slice(0, 2));
   }
+  /* Inisial 1-2 huruf dari nama untuk avatar. */
+  function initials(name) {
+    var parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return "?";
+    var s = parts[0].charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : "");
+    return s.toUpperCase();
+  }
   function shade(hex, amt) {
     var c = hex.replace("#", ""); if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
     var r = parseInt(c.slice(0, 2), 16), g = parseInt(c.slice(2, 4), 16), b = parseInt(c.slice(4, 6), 16);
@@ -95,12 +102,15 @@
             h("span", { style: { fontWeight: 700, fontSize: 13 } }, "Data Delayed")),
           h("div", { style: { fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.45 } }, "Hubungkan API realtime di Pengaturan untuk harga live."),
           h("div", { style: { marginTop: 10 } }, h("button", { className: "btn btn-primary btn-sm btn-block", onClick: function () { props.onNav("pengaturan"); } }, "Aktifkan Realtime"))),
-        h("div", { className: "user-chip" },
-          h("div", { className: "avatar" }, "RS"),
-          h("div", { style: { minWidth: 0, flex: 1 } },
-            h("div", { style: { fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, "Rizky Saputra"),
-            h("div", { style: { fontSize: 11.5, color: "var(--ink-3)" } }, "Investor Ritel")),
-          h(Ic, { name: "chevronRight", size: 16, style: { color: "var(--ink-3)" } }))));
+        (function () {
+          var prof = SM.PROFILE || { name: "Investor", role: "Investor Ritel" };
+          return h("div", { className: "user-chip", style: { cursor: "pointer" }, title: "Ubah profil di Pengaturan", onClick: function () { props.onNav("pengaturan"); } },
+            h("div", { className: "avatar" }, initials(prof.name)),
+            h("div", { style: { minWidth: 0, flex: 1 } },
+              h("div", { style: { fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, prof.name || "Investor"),
+              h("div", { style: { fontSize: 11.5, color: "var(--ink-3)" } }, prof.role || "Investor Ritel")),
+            h(Ic, { name: "chevronRight", size: 16, style: { color: "var(--ink-3)" } }));
+        })()));
   }
 
   /* ---- Ticker tape ---- */
@@ -257,6 +267,6 @@
     AddWatchModal: AddWatchModal,
     BrandMark: BrandMark, StockBadge: StockBadge, Delta: Delta, Sidebar: Sidebar,
     Ticker: Ticker, Header: Header, StatusBar: StatusBar, SearchBox: SearchBox, EmitenSelector: EmitenSelector,
-    IconBtn: IconBtn, KPICard: KPICard, ToastHost: ToastHost, shade: shade
+    IconBtn: IconBtn, KPICard: KPICard, ToastHost: ToastHost, shade: shade, initials: initials
   });
 })();

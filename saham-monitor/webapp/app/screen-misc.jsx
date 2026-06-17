@@ -281,6 +281,25 @@
     function addW() { var c = newCode.toUpperCase().trim(); if (c && wl.indexOf(c) < 0) { window.SM_API.addWatch(c).then(function () { props.toast({ kind: "pos", title: "Ditambahkan", sub: c + " masuk watchlist" }); }).catch(function () { props.toast({ kind: "neg", title: "Gagal menambah", sub: c + " — periksa kode/koneksi" }); }); setNewCode(""); } }
     function delW(c) { window.SM_API.delWatch(c); }
 
+    /* Profil pengguna (nama + keterangan di sidebar) — tersimpan di app.db. */
+    var seedProf = SM.PROFILE || { name: "", role: "" };
+    var pfs = React.useState({ name: seedProf.name || "", role: seedProf.role || "" });
+    var prof = pfs[0], setProf = pfs[1];
+    var pfsv = React.useState(false); var savingProf = pfsv[0], setSavingProf = pfsv[1];
+    React.useEffect(function () {
+      fetch("/api/profile").then(function (r) { return r.json(); })
+        .then(function (d) { if (d) setProf({ name: d.name || "", role: d.role || "" }); }).catch(function () {});
+    }, []);
+    function setProfField(k, v) { setProf(function (cur) { var o = Object.assign({}, cur); o[k] = v; return o; }); }
+    function saveProfile() {
+      var body = { name: (prof.name || "").trim(), role: (prof.role || "").trim() };
+      if (!body.name && !body.role) { props.toast({ kind: "info", title: "Tidak ada perubahan", sub: "Isi nama atau keterangan dulu." }); return; }
+      setSavingProf(true);
+      window.SM_API.saveProfile(body)
+        .then(function () { setSavingProf(false); props.toast({ kind: "pos", title: "Profil tersimpan", sub: "Nama diperbarui di sidebar." }); })
+        .catch(function () { setSavingProf(false); props.toast({ kind: "neg", title: "Gagal menyimpan", sub: "Periksa koneksi, coba lagi." }); });
+    }
+
     /* Kelola API key — disimpan NYATA ke server (kv lokal di app.db). */
     var ks = React.useState({ GOAPI_KEY: "", SECTORS_KEY: "", TG_TOKEN: "", TG_CHAT_ID: "" });
     var keys = ks[0], setKeys = ks[1];
@@ -305,8 +324,26 @@
         })
         .catch(function () { setSaving(false); props.toast({ kind: "neg", title: "Gagal menyimpan", sub: "Periksa koneksi, coba lagi." }); });
     }
+    var avInit = (window.initials ? window.initials(prof.name) : (prof.name || "?").slice(0, 2).toUpperCase());
     return h("div", { className: "screen two-eq", style: { alignItems: "start" } },
       h("div", { className: "grid", style: { gap: 18 } },
+        h("div", { className: "card card-pad" },
+          h("div", { className: "section-title", style: { marginBottom: 14 } }, h(Ic, { name: "user", size: 16 }), "Profil"),
+          h("div", { style: { display: "flex", alignItems: "center", gap: 12, marginBottom: 16 } },
+            h("div", { className: "avatar", style: { width: 46, height: 46, fontSize: 16, flexShrink: 0 } }, avInit),
+            h("div", { style: { minWidth: 0 } },
+              h("div", { style: { fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, prof.name || "Investor"),
+              h("div", { style: { fontSize: 12, color: "var(--ink-3)" } }, prof.role || "Investor Ritel"))),
+          fld("Nama", h("input", { className: "input", maxLength: 40, placeholder: "Nama kamu",
+            value: prof.name, onChange: function (e) { setProfField("name", e.target.value); },
+            onKeyDown: function (e) { if (e.key === "Enter") saveProfile(); } })),
+          h("div", { style: { height: 12 } }),
+          fld("Keterangan", h("input", { className: "input", maxLength: 40, placeholder: "mis. Investor Ritel",
+            value: prof.role, onChange: function (e) { setProfField("role", e.target.value); },
+            onKeyDown: function (e) { if (e.key === "Enter") saveProfile(); } })),
+          h("div", { style: { marginTop: 16 } },
+            h("button", { className: "btn btn-primary", disabled: savingProf, onClick: saveProfile },
+              h(Ic, { name: "check", size: 16 }), savingProf ? "Menyimpan…" : "Simpan Profil"))),
         h("div", { className: "card" },
           h("div", { className: "card-head" }, h(Ic, { name: "eye", size: 18 }), h("div", { className: "ttl" }, "Watchlist")),
           h("div", { className: "card-pad" },

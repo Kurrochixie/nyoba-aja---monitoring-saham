@@ -266,6 +266,7 @@
     fmt: fmt, rupiah: rupiah, pct: pct, signed: signed, dir: dir,
     genCandles: genCandles, genLine: genLine, sma: sma, rsiSeries: rsiSeries, macdSeries: macdSeries, ema: ema, genDates: genDates,
     IHSG: IHSG, STOCKS: STOCKS, getStock: getStock, RESEARCH: RESEARCH,
-    PORTFOLIO: PORTFOLIO, ALERTS: ALERTS, NEWS: NEWS, SECTORS: SECTORS, MARKET: MARKET
+    PORTFOLIO: PORTFOLIO, ALERTS: ALERTS, NEWS: NEWS, SECTORS: SECTORS, MARKET: MARKET,
+    PROFILE: { name: "Investor", role: "Investor Ritel" }
   };
 })();

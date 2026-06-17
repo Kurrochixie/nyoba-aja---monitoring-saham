@@ -647,6 +647,10 @@ def bootstrap():
             out["_fired"] = [f["detail"] for f in fired]
     except Exception as e:  # noqa: BLE001
         logging.error("alert eval: %s", e)
+    try:
+        out["PROFILE"] = _get_profile()
+    except Exception as e:  # noqa: BLE001
+        logging.error("profile: %s", e)
     return JSONResponse(_jsonable(out))
 
 
@@ -802,6 +806,38 @@ def save_keys(b: KeysIn):
             saved.append(k)
     return {"ok": True, "saved": saved, "status": _keys_status(),
             "feed": "realtime" if ms.is_realtime() else "delayed"}
+
+
+# ---- Profil pengguna (nama + keterangan di sidebar) — disimpan lokal di kv ----
+_PROFILE_DEFAULT = {"name": "Investor", "role": "Investor Ritel"}
+
+
+def _get_profile():
+    import storage
+    name = (storage.kv_get("PROFILE_NAME") or "").strip() or _PROFILE_DEFAULT["name"]
+    role = (storage.kv_get("PROFILE_ROLE") or "").strip() or _PROFILE_DEFAULT["role"]
+    return {"name": name, "role": role}
+
+
+class ProfileIn(BaseModel):
+    name: str | None = Field(default=None, max_length=40)
+    role: str | None = Field(default=None, max_length=40)
+
+
+@app.get("/api/profile")
+def get_profile():
+    return _get_profile()
+
+
+@app.post("/api/profile")
+def save_profile(b: ProfileIn):
+    """Simpan nama & keterangan profil ke SQLite kv (lokal). Field kosong diabaikan."""
+    import storage
+    if b.name is not None and b.name.strip():
+        storage.kv_set("PROFILE_NAME", b.name.strip())
+    if b.role is not None and b.role.strip():
+        storage.kv_set("PROFILE_ROLE", b.role.strip())
+    return {"ok": True, "profile": _get_profile()}
 
 
 @app.post("/api/transactions")
