@@ -1,8 +1,8 @@
 """Berita: ambil RSS (Google News + outlet ID), parsing, sentimen leksikon ID."""
 from __future__ import annotations
 
+import calendar
 import re
-import time
 from urllib.parse import quote_plus
 
 import feedparser
@@ -31,9 +31,11 @@ def _clean(html: str) -> str:
 
 
 def _epoch(entry) -> float:
+    # published_parsed dari feedparser SELALU UTC → pakai timegm (bukan mktime
+    # yang menganggap waktu lokal, bikin timestamp meleset sejam-zona / -7 jam WIB).
     t = entry.get("published_parsed") or entry.get("updated_parsed")
     try:
-        return time.mktime(t) if t else 0.0
+        return float(calendar.timegm(t)) if t else 0.0
     except Exception:
         return 0.0
 
